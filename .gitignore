@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.DS_Store
+
+# generated, recreate with the scripts
+digits.npz
+digits.keras
+fonts_preview_*.png
+mistakes.png
+*_solved.jpg
+
+# font paths are Mac-specific, regenerate on each computer
+good_fonts.txt
+good_fonts_backup.txt
