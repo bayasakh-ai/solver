@@ -1,12 +1,125 @@
-# Live Sudoku Solver
+# Sudoku Scanner & Solver
 
-Android app that solves sudoku puzzles live through the camera: point the phone at a
-puzzle and the answers appear in the empty cells, drawn in perspective on the preview.
-The vision pipeline was prototyped in Python, then ported to Kotlin. Both halves live
-in this repo and must stay in sync.
+Android app that reads a sudoku from the camera — newspaper, book or screen — and
+then solves it, hints at it, or checks the user's own progress. The vision pipeline was
+prototyped in Python, then ported to Kotlin. Both halves live in this repo and must
+stay in sync.
 
 Owner: software engineer moving toward data engineering / ML. Explain the reasoning
-behind changes, not just the code.
+behind changes, not just the code. Prefer measured decisions (evaluation numbers) over
+guesses.
+
+---
+
+## Product vision
+
+**Scanning is what makes this app special.** Everything else (hints, checking, a puzzle
+library) builds on a reliable scan. Sudoku apps are a crowded market; don't let the
+library or monetization pull focus from the scanner.
+
+### Core flow (v1)
+1. **Scan** — point the camera at a puzzle. Capture happens automatically once the
+   reading is stable and sharp (PuzzleTracker consensus = the capture trigger). No
+   shutter button needed; holding the phone over the paper for long is uncomfortable.
+2. **Check** — the digital grid is shown next to the photo; the user taps any misread
+   cell to fix it (1–9 picker, low-confidence cells marked).
+3. **Choose** — *Show solution*, *Play with hints*, or *Solve it myself*. Playing
+   happens on a digital board on the phone, so the app always knows the user's progress.
+
+Live AR solving (answers drawn on the camera view) stays as a quick
+"just show me the answer" mode.
+
+### Hints
+Hints follow real solving techniques; the explanation and animation come from the
+technique, not from just revealing a cell.
+
+Techniques, easiest first:
+1. **Last empty cell** in a row/column/box — "Only 6 is missing in this row."
+2. **Hidden single** — "7 can only go in one place in this box."
+3. **Naked single** — "This cell sees 1,2,3,4,5,6,8,9 — only 7 is left."
+4. **Advanced** (pairs, pointing, etc.) — later. Until supported, say "This step needs
+   an advanced technique" and offer to reveal the cell.
+
+Hints are **progressive**: (1) *Nudge* — highlight a region only ("Look at this box");
+(2) *Technique* — name the reason; (3) *Show me* — animated explanation ending with
+the digit filled in. Controls: next level, replay, next hint, back.
+
+Animations (2–3 s, dim everything outside the relevant area):
+- Hidden single: all 7s pulse → lines sweep along their rows/columns crossing out cells
+  in the target box → the remaining cell glows → the 7 writes in.
+- Naked single: row, column and box highlight → the 8 blocking digits light up one by
+  one → the missing digit appears.
+- Last empty cell: the unit highlights → the digit fills in.
+
+**A hint is data, not UI.** The hint engine returns a description such as
+`technique=HIDDEN_SINGLE, digit=7, unit=BOX(5), target=cell, eliminators=[cells],
+crossedOut=[cells], text=...`; the UI only plays it. The same engine rates puzzle
+difficulty (the hardest technique a puzzle needs).
+
+### Handwriting: check progress on paper
+The app distinguishes **printed** digits (the puzzle) from **handwritten** ones (the
+user's entries). This unlocks:
+- **Check my progress** — compare the user's digits with the solution. Show the count
+  first ("2 mistakes"), positions only if asked — don't spoil.
+- **Stuck? Hint from where I am** — hints use printed + the user's *correct* entries.
+- **Continue on the phone** — scan a half-solved paper puzzle and keep playing digitally.
+
+How: the model outputs both digit and type (printed/handwritten). Signals: shape
+(printed from the font generator; handwritten from MNIST/EMNIST through the same
+`clean_cell`, augmented to look like pencil/pen), ink (pencil is grayer; pen is often
+blue — add color, the pipeline is currently grayscale only), and sudoku logic (printed
+digits must form a valid puzzle with exactly one solution).
+
+**Rules (must hold):**
+- **Never "fix" the user's digits.** Self-correction applies to printed digits only. The
+  app solves from printed digits, then compares handwriting to the answer. A user's
+  wrong digit is real, not a misread.
+- **Confidence before accusing.** Only report a mistake when the handwriting reading is
+  confident; otherwise ask ("Is this a 4 or a 9?").
+- **Ignore pencil notes.** Small candidate numbers in cell corners must be detected and
+  skipped, not read as answers. Crossed-out/erased digits are uncertain → ask.
+
+### Puzzle library (v1.1)
+Built-in puzzles using the same play screen as scanned ones. The generator exists
+(`synth.random_puzzle`); difficulty comes from the hint engine. Features: difficulty
+levels, daily puzzle, pencil notes, undo, timer, streaks.
+
+### Monetization (v1.2, only once there are users)
+- Never cover the camera view or the puzzle during play with ads.
+- Candidates: banner on home/library screens; rewarded ad for extra hints; one-time
+  "remove ads" purchase or premium tier (unlimited hints). Combine as needed.
+- Requirements before shipping ads: privacy policy, Google Play data-safety form,
+  consent screen for EU users (camera app + ads = extra scrutiny).
+
+### Design direction
+Screens designed in Claude Design (now inside Claude as artifacts), implemented in Compose.
+- Portrait, one-handed; controls in a bottom bar; keep the screen centre clear for the
+  puzzle. Material 3.
+- **Answer digits:** one fixed hue; lightness adapts per cell to the background (deep on
+  paper, bright on dark screens — measured from the empty cells of the warped grid) plus
+  a thin contrasting halo for shadows/glare. Answers also differ from printed digits by
+  font weight/style, not only by color.
+- **Colorblind-safe by default — never color as the only signal.** Grid outline: solid
+  when ready, dashed while reading. Low-confidence / wrong cells: ring or dot marker.
+  Default palette: blue answers, orange warnings. Settings: palette choice (default,
+  high contrast, alternatives for different color vision types).
+- Hint explanations in a bottom sheet so the puzzle stays visible.
+- Settings toggle for the debug thumbnail of the flattened grid.
+
+---
+
+## Roadmap
+
+1. **Now:** real-world test session (see Current status), then fix what it reveals;
+   port dark-mode inversion to Kotlin.
+2. **v1:** scan → auto-capture → check/tap-to-fix → solution / play with progressive,
+   animated hints. Live AR mode kept.
+3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
+   puzzle library, daily puzzle, difficulty rating.
+4. **v1.2:** monetization.
+5. **Later:** iOS (see iOS plan).
+
+---
 
 ## Repo layout
 
@@ -25,7 +138,7 @@ behind changes, not just the code.
   model.tflite         current model (also copied into android/app/src/main/assets/)
 android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/java/com/bay/sudokusolver/
-    MainActivity.kt    camera setup, permission, Compose UI, GridOverlay (draws outline + answers)
+    MainActivity.kt    camera setup, permission, Compose UI, GridOverlay (outline + answers)
     FrameAnalyzer.kt   per-frame pipeline on the analysis thread, emits FrameResult
     GridDetector.kt    Kotlin port of grid.py
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81
@@ -38,6 +151,12 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
 Package: `com.bay.sudokusolver`. Screen locked to portrait.
 Dependencies: CameraX 1.6.2, OpenCV `org.opencv:opencv:4.12.0`, LiteRT
 `com.google.ai.edge.litert:litert:1.4.0` (classic `org.tensorflow.lite.Interpreter` API).
+
+Planned new pure-logic files (no Android imports): `HintEngine.kt` (techniques, hint
+data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressChecker.kt`
+(compare user digits to solution, confidence rules).
+
+---
 
 ## Pipeline
 
@@ -55,7 +174,7 @@ Dependencies: CameraX 1.6.2, OpenCV `org.opencv:opencv:4.12.0`, LiteRT
    `PuzzleTracker` keeps last 5 readings, a cell is trusted when >= 3 agree.
 8. `SelfCorrect`: if no unique solution, try 2nd-4th model choices or "empty" for the
    8 least confident cells, 1 change then 2; keep the most probable fix with exactly
-   one solution.
+   one solution. (Printed digits only — see handwriting rules.)
 9. Solve once per new consensus, cache; overlay redraws cached answers every frame.
    Grid lost > 0.3 s resets everything.
 
@@ -108,23 +227,25 @@ Android (from `android/`): `./gradlew testDebugUnitTest` (JVM tests),
 
 Truth file format (same as run.py prints): 9 lines like `. . 5 . 3 1 . 4 .`.
 Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
+For handwriting later, extend the truth format to mark user entries separately.
 
 ## Working rules
 
+- **Keep logic platform-independent (future iOS port).** New rules and features (hint
+  engine, game state, progress checking, solving/voting changes) go in plain Kotlin
+  files with NO Android, CameraX, OpenCV or Compose imports — like `Solver.kt` and
+  `PuzzleReader.kt`. Only camera, image processing, model runtime and UI code may be
+  platform-specific. `MainActivity`/`FrameAnalyzer` call into that logic, not contain it.
 - Any change to `grid.py` logic must be mirrored in `GridDetector.kt` (and vice versa).
-- Before and after any pipeline change, run `python evaluate.py --synth 20` and the
-  real-photo set; report the per-condition numbers. Don't trade one condition for another
-  silently.
-- Run the JVM tests after touching Solver/PuzzleReader.
-- Never commit: .venv/, digits.npz, digits.keras, good_fonts*.txt, eval_failures/,
-  root-level test_cells.bin / test_expected.txt, android/.idea/, build folders.
+- Before and after any pipeline or model change, run `python evaluate.py --synth 20`
+  and the real-photo set; report the per-condition numbers. Don't trade one condition
+  for another silently.
+- New pure logic gets JVM unit tests (like `SolverTest`, `SelfCorrectTest`); run them
+  after touching Solver/PuzzleReader or any logic file.
 - Keep FrameAnalyzer's work per frame small; current budget ~5 ms for grid finding at
   30 fps on the owner's phone.
-- **Keep logic platform-independent (future iOS port).** New rules and features (hint
-  mode, tap-to-fix, solving/voting changes) go in plain Kotlin files with NO Android,
-  CameraX, OpenCV or Compose imports — like `Solver.kt` and `PuzzleReader.kt`. Only
-  camera, image processing, model runtime and UI code may be platform-specific.
-  `MainActivity`/`FrameAnalyzer` should call into that logic, not contain it.
+- Never commit: .venv/, digits.npz, digits.keras, good_fonts*.txt, eval_failures/,
+  root-level test_cells.bin / test_expected.txt, android/.idea/, build folders.
 
 ## Current status (baseline)
 
@@ -133,30 +254,18 @@ Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
 - Real photos: 3/3 newspaper photos solve.
 - Android: 30 fps, ~5 ms grid finding, answers appear in ~1-2 s, self-correction fixes
   misreads live. Tested mostly on a computer screen so far.
-
-## Next steps (owner's backlog)
-
-1. Real-world test session: paper, bad light/shadow/glare, steep angles, small puzzle
-   in frame, curved book page, pencil marks, dark-mode screens.
-2. Port dark-mode inversion to Kotlin.
-3. Tap-to-fix: let the user correct a cell when the app can't solve.
-4. Hint mode: reveal one cell at a time.
-5. Handwritten pencil digits: decide whether to ignore or read them (model only knows
-   printed digits).
-6. UI design (screens designed in Claude Design, then implemented in Compose).
-   Direction so far: one answer hue whose lightness adapts per cell to the background
-   (deep on paper, bright on dark screens) + thin halo; answers also differ from printed
-   digits by font weight; colorblind-safe by default (never color-only: solid vs dashed
-   outline, ring on low-confidence cells; blue answers / orange warnings); palette setting.
+- Next real-world test session: paper, bad light/shadow/glare, steep angles, small
+  puzzle in frame, curved book page, pencil marks, dark-mode screens. Record how each
+  fails ("no grid", "stuck reading", "wrong answer").
 
 ## iOS plan (later — not before Android v1)
 
-Start only when Android passes the real-world test session, has the core features
-(dark mode, tap-to-fix, hint mode) and the design is final. Until then, follow the
-platform-independence rule above so the port stays cheap.
+Start only when Android passes the real-world tests, has the v1 features and the design
+is final. Until then, follow the platform-independence rule so the port stays cheap.
 
 Approach: Kotlin Multiplatform.
-- Shared module: `Solver.kt`, `PuzzleReader.kt` and any new pure-logic files.
+- Shared module: `Solver.kt`, `PuzzleReader.kt`, `HintEngine.kt`, `GameState.kt`,
+  `ProgressChecker.kt` and any other pure-logic files.
 - iOS-specific: camera (AVFoundation), grid detection (port `GridDetector` using OpenCV
   for iOS), model (LiteRT iOS with the same `model.tflite`, or convert to Core ML),
   UI (SwiftUI or Compose Multiplatform).
