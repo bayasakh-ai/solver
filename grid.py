@@ -24,7 +24,60 @@ def order_corners(pts):
 
 
 def find_grid(th, min_area_ratio=0.1):
-    """Largest convex 4-corner contour = the puzzle border. None if not found."""
+    """Find the puzzle's 4 corners. Tries the fast outer-border method first,
+    then falls back to locating the grid from its cells."""
+    corners = _find_by_border(th, min_area_ratio)
+    if corners is None:
+        rough = _find_by_cells(th)
+        if rough is not None:
+            corners = _refine_edges(th, order_corners(rough.astype(np.float32)))
+    return corners
+
+
+def _refine_edges(th, rough, pad=40, band=30):
+    """Snap a rough quad onto the real border lines. Warp with the rough
+    corners, then for each edge find the strongest line near where the border
+    should be, separately in its two halves (so tilted edges are handled).
+    Edges are intersected and mapped back to the photo."""
+    S = WARP_SIZE
+    dst = np.array([[pad, pad], [pad + S, pad], [pad + S, pad + S], [pad, pad + S]], np.float32)
+    M = cv2.getPerspectiveTransform(rough, dst)
+    w = cv2.warpPerspective(th, M, (S + 2 * pad, S + 2 * pad))
+    halves = [(pad + S // 8, pad + S // 2), (pad + S // 2, pad + 7 * S // 8)]
+
+    def strongest(profile, nominal):
+        lo = nominal - band
+        return lo + int(np.argmax(profile[lo:nominal + band]))
+
+    lines = {}
+    for name, nominal in (("left", pad), ("right", pad + S), ("top", pad), ("bottom", pad + S)):
+        pts = []
+        for a, b in halves:
+            if name in ("left", "right"):
+                x = strongest(w[a:b].sum(axis=0), nominal)
+                pts.append((x, (a + b) / 2))
+            else:
+                y = strongest(w[:, a:b].sum(axis=1), nominal)
+                pts.append(((a + b) / 2, y))
+        lines[name] = pts
+
+    def intersect(l1, l2):
+        (x1, y1), (x2, y2) = l1
+        (x3, y3), (x4, y4) = l2
+        d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        a, b = x1 * y2 - y1 * x2, x3 * y4 - y3 * x4
+        return ((a * (x3 - x4) - (x1 - x2) * b) / d, (a * (y3 - y4) - (y1 - y2) * b) / d)
+
+    quad = np.array([[intersect(lines["top"], lines["left"])],
+                     [intersect(lines["top"], lines["right"])],
+                     [intersect(lines["bottom"], lines["right"])],
+                     [intersect(lines["bottom"], lines["left"])]], np.float32)
+    return cv2.perspectiveTransform(quad, np.linalg.inv(M)).reshape(4, 2)
+
+
+def _find_by_border(th, min_area_ratio):
+    """Largest convex 4-corner contour = the puzzle border. Fails when a page
+    rule or text touches the border, because the shapes merge into one."""
     contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     h, w = th.shape
     for c in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
@@ -34,6 +87,75 @@ def find_grid(th, min_area_ratio=0.1):
         if len(approx) == 4 and cv2.isContourConvex(approx):
             return order_corners(approx.reshape(4, 2).astype(np.float32))
     return None
+
+
+def _find_by_cells(th, min_cells=40):
+    """Find the grid from its cells: the inside of every cell is a small
+    square hole. The biggest group of same-sized squares is the puzzle, and
+    its outline gives the corners. Lines touching the grid don't matter here."""
+    # thicken lines a little so tiny gaps in thin grid lines don't merge cells
+    closed = cv2.dilate(th, np.ones((3, 3), np.uint8))
+    contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    h, w = th.shape
+    squares = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < 0.0004 * h * w or area > 0.05 * h * w:
+            continue
+        approx = cv2.approxPolyDP(c, 0.1 * cv2.arcLength(c, True), True)
+        x, y, bw, bh = cv2.boundingRect(c)
+        if len(approx) == 4 and 0.6 < bw / bh < 1.6 and area > 0.6 * bw * bh:
+            squares.append((area, c))
+    if len(squares) < min_cells:
+        return None
+    areas = np.array([a for a, _ in squares])
+    # area with the most similar-sized squares around it = the puzzle's cell size
+    counts = [((areas > 0.6 * a) & (areas < 1.6 * a)).sum() for a in areas]
+    ref = areas[int(np.argmax(counts))]
+    cells = [c for a, c in squares if 0.6 * ref < a < 1.6 * ref]
+    if len(cells) < min_cells:
+        return None
+    # the puzzle's cells sit together; drop stray squares far from the main cluster
+    centers = np.array([c.reshape(-1, 2).mean(axis=0) for c in cells])
+    med = np.median(centers, axis=0)
+    dist = np.linalg.norm(centers - med, axis=1)
+    cell_size = np.sqrt(ref)
+    cells = [c for c, d in zip(cells, dist) if d < 7 * cell_size]
+    if len(cells) < min_cells:
+        return None
+    return _fit_lattice(cells, cell_size)
+
+
+def _fit_lattice(cells, s):
+    """Give each found cell its (column, row) by walking from neighbour to
+    neighbour, then fit a homography lattice -> image. This recovers the 4
+    corners even when the corner cells themselves weren't found."""
+    from collections import deque
+    pts = np.array([c.reshape(-1, 2).mean(axis=0) for c in cells], np.float32)
+    n = len(pts)
+    start = int(np.argmin(np.linalg.norm(pts - np.median(pts, axis=0), axis=1)))
+    idx = {start: (0, 0)}
+    queue = deque([start])
+    while queue:
+        k = queue.popleft()
+        d = pts - pts[k]
+        dist = np.linalg.norm(d, axis=1)
+        for m in np.where((dist > 0.6 * s) & (dist < 1.3 * s))[0]:
+            if m in idx:
+                continue
+            dx, dy = d[m]
+            i, j = idx[k]
+            idx[m] = (i + int(np.sign(dx)), j) if abs(dx) > abs(dy) else (i, j + int(np.sign(dy)))
+            queue.append(m)
+    ij = np.array([idx[k] for k in idx], np.float32)
+    ij -= ij.min(axis=0)
+    if ij[:, 0].max() != 8 or ij[:, 1].max() != 8:
+        return None  # couldn't see a full 9x9 span
+    H, _ = cv2.findHomography(ij + 0.5, pts[list(idx)], cv2.RANSAC, 0.3 * s)
+    if H is None:
+        return None
+    lattice_corners = np.array([[[0, 0]], [[9, 0]], [[9, 9]], [[0, 9]]], np.float32)
+    return cv2.perspectiveTransform(lattice_corners, H).reshape(4, 2)
 
 
 def warp(gray, corners, size=WARP_SIZE):
@@ -79,10 +201,17 @@ def clean_cell(cell, out=DIGIT_SIZE):
     return canvas
 
 
+def binarize(gray_img):
+    """Ink -> white, paper -> black. C=10 ignores paper texture and shading;
+    the old C=2 turned paper grain in empty cells into fake digits.
+    Used for BOTH real cells and training data, so they always match."""
+    return cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                 cv2.THRESH_BINARY_INV, 21, 10)
+
+
 def extract_cells(warped):
     """9x9 list: each entry is a 28x28 digit image or None (empty)."""
-    th = cv2.adaptiveThreshold(warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                               cv2.THRESH_BINARY_INV, 11, 2)
+    th = binarize(warped)
     step = warped.shape[0] // 9
     return [[clean_cell(th[r * step:(r + 1) * step, c * step:(c + 1) * step])
              for c in range(9)] for r in range(9)]

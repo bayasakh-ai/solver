@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from grid import clean_cell
+from grid import binarize, clean_cell
 
 CELL = 50
 
@@ -58,9 +58,7 @@ def render(d, font_path):
         a = cv2.GaussianBlur(a, (3, 3), random.uniform(0.3, 1.2))
     a = np.clip(a + np.random.normal(0, random.uniform(0, 12), a.shape), 0, 255).astype(np.uint8)
 
-    th = cv2.adaptiveThreshold(a, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                               cv2.THRESH_BINARY_INV, 11, 2)
-    return clean_cell(th)
+    return clean_cell(binarize(a))
 
 
 def main():

@@ -12,3 +12,11 @@ mistakes.png
 # font paths are Mac-specific, regenerate on each computer
 good_fonts.txt
 good_fonts_backup.txt
+
+# evaluation output and generated test data
+eval_failures/
+/test_cells.bin
+/test_expected.txt
+
+# Android Studio personal settings
+android/.idea/
