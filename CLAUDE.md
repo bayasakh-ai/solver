@@ -120,6 +120,11 @@ Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
   root-level test_cells.bin / test_expected.txt, android/.idea/, build folders.
 - Keep FrameAnalyzer's work per frame small; current budget ~5 ms for grid finding at
   30 fps on the owner's phone.
+- **Keep logic platform-independent (future iOS port).** New rules and features (hint
+  mode, tap-to-fix, solving/voting changes) go in plain Kotlin files with NO Android,
+  CameraX, OpenCV or Compose imports — like `Solver.kt` and `PuzzleReader.kt`. Only
+  camera, image processing, model runtime and UI code may be platform-specific.
+  `MainActivity`/`FrameAnalyzer` should call into that logic, not contain it.
 
 ## Current status (baseline)
 
@@ -139,3 +144,23 @@ Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
 5. Handwritten pencil digits: decide whether to ignore or read them (model only knows
    printed digits).
 6. UI design (screens designed in Claude Design, then implemented in Compose).
+   Direction so far: one answer hue whose lightness adapts per cell to the background
+   (deep on paper, bright on dark screens) + thin halo; answers also differ from printed
+   digits by font weight; colorblind-safe by default (never color-only: solid vs dashed
+   outline, ring on low-confidence cells; blue answers / orange warnings); palette setting.
+
+## iOS plan (later — not before Android v1)
+
+Start only when Android passes the real-world test session, has the core features
+(dark mode, tap-to-fix, hint mode) and the design is final. Until then, follow the
+platform-independence rule above so the port stays cheap.
+
+Approach: Kotlin Multiplatform.
+- Shared module: `Solver.kt`, `PuzzleReader.kt` and any new pure-logic files.
+- iOS-specific: camera (AVFoundation), grid detection (port `GridDetector` using OpenCV
+  for iOS), model (LiteRT iOS with the same `model.tflite`, or convert to Core ML),
+  UI (SwiftUI or Compose Multiplatform).
+- Parity: reuse `test_cells.bin` / `test_expected.txt` to prove iOS predictions match
+  Python and Android, the same way `DigitClassifierTest` does.
+- Needs: Xcode on the owner's iMac, an iPhone, Apple Developer account (free for own
+  device, paid for App Store).
