@@ -1,6 +1,8 @@
 package com.bay.sudokusolver
 
 import android.Manifest
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -50,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private var result by mutableStateOf<FrameResult?>(null)
     private var error by mutableStateOf<String?>(null)
     private lateinit var analysisExecutor: ExecutorService
+    private lateinit var classifier: DigitClassifier
 
     private val requestPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (!OpenCVLoader.initLocal()) error = "OpenCV failed to load"
         analysisExecutor = Executors.newSingleThreadExecutor()
+        classifier = DigitClassifier(this)
 
         hasCameraPermission = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
@@ -100,9 +105,9 @@ class MainActivity : ComponentActivity() {
 
     private fun statusText(r: FrameResult?): String = when {
         r == null -> "Starting camera…"
-        r.corners == null -> "Looking for a sudoku… · %.0f fps · %d ms".format(r.fps, r.processMs)
-        else -> "Grid ✓ · %d digits · sharpness %.0f (%s) · %.0f fps · %d ms".format(
-            r.digits, r.sharpness, if (r.isSharp) "sharp" else "blurry", r.fps, r.processMs)
+        r.corners == null -> r.message
+        else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms".format(
+            r.message, r.digits, r.sharpness, r.fps, r.processMs)
     }
 
     private fun startCamera(previewView: PreviewView) {
@@ -131,7 +136,7 @@ class MainActivity : ComponentActivity() {
                 .setResolutionSelector(analysisSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            analysis.setAnalyzer(analysisExecutor, FrameAnalyzer { r ->
+            analysis.setAnalyzer(analysisExecutor, FrameAnalyzer(classifier) { r ->
                 runOnUiThread { result = r }
             })
 
@@ -142,6 +147,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        analysisExecutor.execute { classifier.close() } // runs after the last frame finishes
         analysisExecutor.shutdown()
     }
 }
@@ -176,7 +182,6 @@ private fun GridOverlay(result: FrameResult?, modifier: Modifier = Modifier) {
         fun corner(i: Int) = Offset(ox + c[2 * i] * scale, oy + c[2 * i + 1] * scale)
         val tl = corner(0); val tr = corner(1); val br = corner(2); val bl = corner(3)
 
-        // point at fraction (u, v) across the grid (close enough for drawing)
         // true perspective: maps (u, v) in the unit square onto the grid's 4 corners
         val dx1 = tr.x - br.x; val dx2 = bl.x - br.x; val dx3 = tl.x - tr.x + br.x - bl.x
         val dy1 = tr.y - br.y; val dy2 = bl.y - br.y; val dy3 = tl.y - tr.y + br.y - bl.y
@@ -200,5 +205,25 @@ private fun GridOverlay(result: FrameResult?, modifier: Modifier = Modifier) {
             moveTo(tl.x, tl.y); lineTo(tr.x, tr.y); lineTo(br.x, br.y); lineTo(bl.x, bl.y); close()
         }
         drawPath(outline, color, style = Stroke(width = 4.dp.toPx()))
+
+        // the answers, drawn into each empty cell with the cell's own size and perspective
+        val puzzle = r.puzzle ?: return@Canvas
+        val solution = r.solution ?: return@Canvas
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = android.graphics.Color.rgb(46, 204, 113)
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val canvas = drawContext.canvas.nativeCanvas
+        for (i in 0 until 81) {
+            if (puzzle[i] != 0) continue
+            val row = i / 9
+            val col = i % 9
+            val u = (col + 0.5f) / 9f
+            val center = at(u, (row + 0.5f) / 9f)
+            val cellHeight = (at(u, (row + 1f) / 9f) - at(u, row / 9f)).getDistance()
+            paint.textSize = cellHeight * 0.7f
+            canvas.drawText(solution[i].toString(), center.x, center.y + paint.textSize * 0.36f, paint)
+        }
     }
 }

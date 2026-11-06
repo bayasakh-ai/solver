@@ -22,15 +22,26 @@ data class FrameResult(
     val digits: Int,               // filled cells found
     val processMs: Long,
     val fps: Double,
+    val message: String,           // what the user should know right now
+    val puzzle: IntArray? = null,  // givens used for solving (after any fixes)
+    val solution: IntArray? = null,
 ) {
     val isSharp get() = sharpness > FrameAnalyzer.SHARP_ENOUGH
 }
 
 /**
- * Milestone 2 analyzer: camera frame -> upright grayscale -> find grid -> flatten.
- * Reports corners for the overlay, sharpness inside the grid, and a digit count.
+ * Live pipeline: camera frame -> upright grayscale -> find grid -> flatten ->
+ * read digits (sharp frames only) -> vote across frames -> self-correct + solve once
+ * -> report the solution so the overlay can draw it on every frame.
  */
-class FrameAnalyzer(private val onResult: (FrameResult) -> Unit) : ImageAnalysis.Analyzer {
+class FrameAnalyzer(
+    private val classifier: DigitClassifier,
+    private val onResult: (FrameResult) -> Unit,
+) : ImageAnalysis.Analyzer {
+
+    private val tracker = PuzzleTracker()
+    private var solved: SolveResult? = null
+    private var solvedFrom: IntArray? = null // the consensus reading that was solved
 
     private var frames = 0
     private var windowStart = System.nanoTime()
@@ -63,27 +74,70 @@ class FrameAnalyzer(private val onResult: (FrameResult) -> Unit) : ImageAnalysis
                 val (warped, m) = GridDetector.warp(gray, corners)
                 m.release()
                 val sharp = sharpness(warped)
-                val digits = GridDetector.extractCells(warped).count { it != null }
+                val cells = GridDetector.extractCells(warped)
+                val digits = cells.count { it != null }
                 val thumb = toBitmap(warped, 225)
                 warped.release()
 
+                if (sharp > SHARP_ENOUGH) read(cells)
+                val message = updateSolution(sharp > SHARP_ENOUGH)
+
                 val flat = FloatArray(8) { i -> (if (i % 2 == 0) corners[i / 2].x else corners[i / 2].y).toFloat() }
                 smoothed = smooth(flat, smoothed, gray.cols())
+                val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
-                    (now - start) / 1_000_000, fps)
+                    (System.nanoTime() - start) / 1_000_000, fps, message,
+                    s?.puzzle, s?.solution)
                 lastFound = result
                 lastFoundAt = now
             } else if (lastFound != null && now - lastFoundAt < HOLD_NANOS) {
                 // grid missed for a moment (hand shake): keep showing it to avoid flicker
                 result = lastFound!!.copy(processMs = (now - start) / 1_000_000, fps = fps)
             } else {
+                // grid gone: forget this puzzle so the next one starts fresh
                 smoothed = null
                 lastFound = null
+                tracker.reset()
+                solved = null
+                solvedFrom = null
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
-                    (now - start) / 1_000_000, fps)
+                    (now - start) / 1_000_000, fps, "Point the camera at a sudoku")
             }
             gray.release()
             onResult(result)
+        }
+    }
+
+    /** Classify the filled cells of one sharp frame and add the reading to the vote. */
+    private fun read(cells: List<ByteArray?>) {
+        val filled = cells.indices.filter { cells[it] != null }
+        val grid = IntArray(81)
+        val probs = arrayOfNulls<FloatArray>(81)
+        if (filled.isNotEmpty()) {
+            val out = classifier.classify(filled.map { cells[it]!! })
+            filled.forEachIndexed { k, i ->
+                probs[i] = out[k]
+                grid[i] = out[k].indices.maxBy { out[k][it] } + 1
+            }
+        }
+        tracker.add(grid, probs)
+    }
+
+    /** Solve when the vote produces a new stable reading; returns the status message. */
+    private fun updateSolution(isSharp: Boolean): String {
+        val consensus = tracker.consensus()
+        if (consensus != null && !consensus.first.contentEquals(solvedFrom)) {
+            solved = SelfCorrect.solve(consensus.first, consensus.second)
+            solvedFrom = consensus.first
+        }
+        val s = solved
+        return when {
+            s?.solution != null && s.fixes.isNotEmpty() -> "Solved ✓ (fixed ${s.fixes.size} misread digit${if (s.fixes.size > 1) "s" else ""})"
+            s?.solution != null -> "Solved ✓"
+            s != null && !Solver.isPlausible(s.puzzle) -> "Too few digits found — move closer"
+            s != null -> "Can't solve this reading — try better light or another angle"
+            !isSharp -> "Hold steady…"
+            else -> "Reading digits… ${tracker.frames}/${tracker.windowSize}"
         }
     }
 
