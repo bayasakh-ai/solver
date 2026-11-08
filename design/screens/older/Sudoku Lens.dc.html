@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0,0&amp;display=block" rel="stylesheet"><style>body{margin:0;background:#ecebe7;font-family:Figtree,system-ui,sans-serif;color:#1c1b1f}a{color:#148A42}a:hover{color:#0d6b32}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 Figtree,system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:500 13px/1.3 Figtree,system-ui,sans-serif;color:#1a1a1a}.dv-opt:target .dv-oid{background:#148A42;color:#fff}.dv-next{margin:28px 0 0;font:12px/1.5 Figtree,system-ui,sans-serif;color:rgba(0,0,0,.5)}</style></helmet>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Sudoku Lens · live-solve camera screens (all interactive)</span></div>
+<div class="dv-opts">
+<sc-for list="{{ screens }}" as="s" hint-placeholder-count="6">
+<div class="dv-opt" id="{{ s.id }}">
+<div class="dv-olabel"><a class="dv-oid" href="#{{ s.id }}">{{ s.id }}</a>{{ s.label }}</div>
+<div style="width:360px;height:780px;padding:9px;border-radius:44px;background:#0c0c0d;box-shadow:0 20px 50px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.2)">
+<div style="position:relative;width:360px;height:780px;border-radius:36px;overflow:hidden;background:radial-gradient(ellipse 120% 90% at 50% 42%,#544a3f 0%,#2e2823 55%,#171411 100%);font-family:Figtree,system-ui,sans-serif">
+
+<div onClick="{{ s.onCamera }}" style="position:absolute;inset:0;cursor:{{ s.camCursor }}">
+<div style="position:absolute;left:22px;top:150px;width:316px;height:430px;transform:perspective(1100px) rotateX(13deg) rotateZ(-3.5deg);transform-origin:50% 40%;background:#f1ede4;box-shadow:0 34px 50px rgba(0,0,0,.55),0 2px 4px rgba(0,0,0,.3);filter:{{ s.blur }}">
+<div style="position:absolute;left:23px;right:23px;top:18px;display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #222;padding-bottom:6px"><span style="font:700 19px Georgia,serif;letter-spacing:.04em;color:#1d1d1d">SUDOKU</span><span style="font:italic 11px Georgia,serif;color:#444">No. 412 · Medium</span></div>
+<div style="position:absolute;left:23px;top:62px;width:270px;height:270px">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:2px;padding:2px;width:100%;height:100%;box-sizing:border-box;background:#1d1d1d">
+<sc-for list="{{ s.boxes }}" as="b" hint-placeholder-count="9">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:1px;background:#3a3a3a">
+<sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="9">
+<div style="position:relative;background:#f1ede4;display:flex;align-items:center;justify-content:center">
+<span style="font:700 19px Georgia,'Times New Roman',serif;color:#1d1d1d">{{ c.g }}</span>
+<sc-if value="{{ c.hint }}"><span style="position:absolute;inset:-3px;border-radius:50%;border:3px solid #148A42;box-shadow:0 0 0 3px rgba(255,255,255,.9)"></span></sc-if>
+<sc-if value="{{ c.showA }}"><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 21px Figtree,sans-serif;color:#148A42;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff">{{ c.a }}</span></sc-if>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+<sc-if value="{{ s.hasOutline }}"><div style="position:absolute;inset:-9px;border:3px {{ s.oStyle }} {{ s.oColor }};border-radius:6px;box-shadow:0 0 14px {{ s.oGlow }},inset 0 0 10px {{ s.oGlow }}"></div></sc-if>
+</div>
+<div style="position:absolute;left:23px;right:23px;top:350px;height:62px;display:grid;grid-template-columns:1fr 1fr;gap:14px"><div style="background:repeating-linear-gradient(#0000 0 5px,rgba(0,0,0,.28) 5px 7px)"></div><div style="background:repeating-linear-gradient(#0000 0 5px,rgba(0,0,0,.28) 5px 7px)"></div></div>
+</div>
+<sc-if value="{{ s.flash }}"><div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,rgba(255,248,225,.28),rgba(255,248,225,0) 70%)"></div></sc-if>
+</div>
+
+<sc-if value="{{ s.isScan }}">
+<div style="position:absolute;left:34px;top:178px;width:292px;height:330px;pointer-events:none">
+<div style="position:absolute;left:0;top:0;width:40px;height:40px;border-left:4px solid #fff;border-top:4px solid #fff;border-top-left-radius:16px"></div>
+<div style="position:absolute;right:0;top:0;width:40px;height:40px;border-right:4px solid #fff;border-top:4px solid #fff;border-top-right-radius:16px"></div>
+<div style="position:absolute;left:0;bottom:0;width:40px;height:40px;border-left:4px solid #fff;border-bottom:4px solid #fff;border-bottom-left-radius:16px"></div>
+<div style="position:absolute;right:0;bottom:0;width:40px;height:40px;border-right:4px solid #fff;border-bottom:4px solid #fff;border-bottom-right-radius:16px"></div>
+</div>
+<div style="position:absolute;left:16px;right:16px;bottom:44px;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none">
+<div style="display:flex;align-items:center;gap:12px;height:60px;padding:0 26px;border-radius:30px;background:rgba(18,18,20,.82);backdrop-filter:blur(12px);color:#fff;font-size:19px;font-weight:600"><span style="font-family:'Material Symbols Rounded';font-size:26px;line-height:1">center_focus_weak</span>Point at a sudoku</div>
+<div style="padding:6px 14px;border-radius:14px;background:rgba(18,18,20,.6);color:#fff;font-size:14px">Fit the whole grid inside the frame</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isRead }}">
+<div style="position:absolute;left:16px;right:16px;bottom:32px;padding:20px 20px 22px;border-radius:28px;background:rgba(18,18,20,.86);backdrop-filter:blur(14px);color:#fff;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px">
+<div style="width:48px;height:48px;border-radius:24px;background:{{ s.readIconBg }};color:#1c1b1f;display:flex;align-items:center;justify-content:center;flex:none"><span style="font-family:'Material Symbols Rounded';font-size:26px;line-height:1">{{ s.readIcon }}</span></div>
+<div style="display:flex;flex-direction:column;gap:3px"><div style="font-size:21px;font-weight:600">{{ s.readTitle }}</div><div style="font-size:15px;color:rgba(255,255,255,.82)">{{ s.readSub }}</div></div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px"><sc-for list="{{ s.segs }}" as="g" hint-placeholder-count="5"><div style="height:6px;border-radius:3px;background:{{ g.bg }};transition:background .3s"></div></sc-for></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isSolved }}">
+<div style="position:absolute;left:16px;right:16px;bottom:32px;padding:8px;border-radius:32px;background:rgba(18,18,20,.86);backdrop-filter:blur(14px);display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+<div onClick="{{ s.onFreeze }}" style="height:76px;border-radius:24px;background:{{ s.freezeBg }};color:{{ s.freezeFg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;transition:background .2s"><span style="font-family:'Material Symbols Rounded';font-size:28px;line-height:1">{{ s.freezeIcon }}</span><span style="font-size:15px;font-weight:600">{{ s.freezeLabel }}</span></div>
+<div onClick="{{ s.onHint }}" style="height:76px;border-radius:24px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer" style-hover="background:rgba(255,255,255,.1)"><span style="font-family:'Material Symbols Rounded';font-size:28px;line-height:1">lightbulb</span><span style="font-size:15px;font-weight:600">Hint</span></div>
+<div onClick="{{ s.onReset }}" style="height:76px;border-radius:24px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer" style-hover="background:rgba(255,255,255,.1)"><span style="font-family:'Material Symbols Rounded';font-size:28px;line-height:1">restart_alt</span><span style="font-size:15px;font-weight:600">Reset</span></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isHint }}">
+<div style="position:absolute;left:16px;right:16px;bottom:32px;padding:20px;border-radius:28px;background:rgba(18,18,20,.88);backdrop-filter:blur(14px);color:#fff;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:14px;font-weight:600;letter-spacing:.04em;color:#7FE0A6">{{ s.hintEyebrow }}</div><div style="font-size:22px;font-weight:600">{{ s.hintTitle }}</div></div>
+<div onClick="{{ s.onExitHint }}" style="width:48px;height:48px;margin:-8px -8px 0 0;border-radius:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none" style-hover="background:rgba(255,255,255,.1)"><span style="font-family:'Material Symbols Rounded';font-size:24px;line-height:1">close</span></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px">
+<div onClick="{{ s.onExitHint }}" style="height:56px;border-radius:28px;border:1.5px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;cursor:pointer" style-hover="background:rgba(255,255,255,.08)">Show all</div>
+<div onClick="{{ s.onNextHint }}" style="height:56px;border-radius:28px;background:#148A42;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;font-weight:600;cursor:pointer" style-hover="background:#18a04e" style-active="transform:scale(.98)">Next hint<span style="font-family:'Material Symbols Rounded';font-size:22px;line-height:1">arrow_forward</span></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isFail }}">
+<div style="position:absolute;inset:0;background:rgba(10,10,12,.72)"></div>
+<div style="position:absolute;left:16px;right:16px;top:100px;padding:12px 14px;border-radius:20px;background:#5c1a14;color:#FFDAD4;display:flex;gap:12px;align-items:flex-start">
+<span style="font-family:'Material Symbols Rounded';font-size:24px;line-height:1;margin-top:1px">error</span>
+<div style="display:flex;flex-direction:column;gap:3px"><div style="font-size:17px;font-weight:600;color:#fff">Couldn’t solve this puzzle</div><div style="font-size:14px;line-height:1.35">{{ s.failSub }}</div></div>
+</div>
+<div style="position:absolute;left:24px;top:194px;width:312px;padding:8px;box-sizing:border-box;border-radius:18px;background:#fbfaf7;box-shadow:0 10px 30px rgba(0,0,0,.4)">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px;background:#1c1b1f;border-radius:6px;aspect-ratio:1">
+<sc-for list="{{ s.fboxes }}" as="b" hint-placeholder-count="9">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:1px;background:#9a978f">
+<sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="9">
+<div onClick="{{ c.onTap }}" style="background:{{ c.bg }};box-shadow:{{ c.ring }};color:{{ c.fg }};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:{{ c.fw }};cursor:pointer;aspect-ratio:1">{{ c.d }}</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</div>
+<sc-if value="{{ s.noSheet }}">
+<div style="position:absolute;left:24px;right:24px;top:520px;display:flex;gap:18px;justify-content:center;color:#fff;font-size:14px">
+<div style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:16px;border-radius:4px;background:#FFE3A3;box-shadow:inset 0 0 0 2px #C98A00"></span>Unsure</div>
+<div style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:16px;border-radius:4px;background:#D9F2E2;box-shadow:inset 0 0 0 2px #148A42"></span>Corrected</div>
+</div>
+<sc-if value="{{ s.failMsg }}"><div style="position:absolute;left:24px;right:24px;top:556px;text-align:center;color:#FFB4A8;font-size:14px;font-weight:500">{{ s.failMsg }}</div></sc-if>
+<div style="position:absolute;left:16px;right:16px;bottom:32px;display:grid;grid-template-columns:1fr 1.4fr;gap:10px">
+<div onClick="{{ s.onReset }}" style="height:56px;border-radius:28px;border:1.5px solid rgba(255,255,255,.6);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;font-weight:600;cursor:pointer" style-hover="background:rgba(255,255,255,.08)"><span style="font-family:'Material Symbols Rounded';font-size:22px;line-height:1">photo_camera</span>Rescan</div>
+<div onClick="{{ s.onSolve }}" style="height:56px;border-radius:28px;background:#fff;color:#1c1b1f;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;font-weight:600;cursor:pointer" style-hover="background:#e9e6df" style-active="transform:scale(.98)"><span style="font-family:'Material Symbols Rounded';font-size:22px;line-height:1">auto_fix_high</span>Solve again</div>
+</div>
+</sc-if>
+<sc-if value="{{ s.hasSheet }}">
+<div onClick="{{ s.onCloseSheet }}" style="position:absolute;inset:0"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;padding:10px 16px 26px;border-radius:28px 28px 0 0;background:#fbfaf7;box-shadow:0 -10px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:12px">
+<div style="width:36px;height:4px;border-radius:2px;background:#c9c5bd;align-self:center"></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px"><div style="font-size:19px;font-weight:600">{{ s.sheetTitle }}</div><div style="font-size:14px;color:#5b5850">{{ s.sheetSub }}</div></div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+<sc-for list="{{ s.digits }}" as="d" hint-placeholder-count="10">
+<div onClick="{{ d.onPick }}" style="height:60px;border-radius:18px;background:{{ d.bg }};box-shadow:{{ d.ring }};color:#1c1b1f;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600;cursor:pointer" style-hover="filter:brightness(.95)" style-active="transform:scale(.96)"><span style="font-family:{{ d.ff }};line-height:1">{{ d.label }}</span></div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</sc-if>
+
+<div style="position:absolute;left:0;right:0;top:0;height:34px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;color:#fff;font-size:14px;font-weight:600;pointer-events:none"><span>9:41</span><span style="font-family:'Material Symbols Rounded';font-size:17px;letter-spacing:4px;line-height:1">signal_cellular_alt wifi battery_full</span></div>
+<div style="position:absolute;left:16px;right:16px;top:42px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+<div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 16px 0 14px;border-radius:20px;background:rgba(18,18,20,.8);backdrop-filter:blur(12px);color:#fff;font-size:15px;font-weight:600;opacity:{{ s.chipOpacity }}"><span style="width:10px;height:10px;border-radius:5px;background:{{ s.chipColor }}"></span>{{ s.chip }}</div>
+<div onClick="{{ s.onFlash }}" style="width:52px;height:52px;border-radius:26px;background:{{ s.flashBg }};color:{{ s.flashFg }};backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s"><span style="font-family:'Material Symbols Rounded';font-size:26px;line-height:1">{{ s.flashIcon }}</span></div>
+</div>
+<div style="position:absolute;left:50%;bottom:9px;width:110px;height:4px;margin-left:-55px;border-radius:2px;background:rgba(255,255,255,.75);pointer-events:none"></div>
+</div>
+</div>
+<div style="max-width:378px;font-size:13px;line-height:1.45;color:rgba(0,0,0,.58);text-wrap:pretty">{{ s.caption }}</div>
+</div>
+</sc-for>
+
+<div class="dv-opt" id="notes">
+<div class="dv-olabel"><a class="dv-oid" href="#notes">notes</a>Solution digit color</div>
+<div style="width:340px;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:22px;font-weight:600">Leaf green #148A42</div><div style="font-size:14px;line-height:1.5;color:#4a4842;text-wrap:pretty">Its luminance sits midway between paper white and a dark-mode background, so contrast is about equal on both (≈4.4:1 on white, ≈4.2:1 on #121212). A 2px white halo keeps the edge crisp over grid lines, shadows and screen glare.</div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div style="display:flex;flex-direction:column;gap:6px"><div style="height:110px;border-radius:10px;background:#f1ede4;border:1px solid #ddd8cc;display:grid;grid-template-columns:1fr 1fr;place-items:center;font-size:40px"><span style="font:700 38px Georgia,serif;color:#1d1d1d">4</span><span style="font-weight:700;color:#148A42;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff">7</span></div><div style="font-size:12px;color:#6b6860">Newsprint</div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="height:110px;border-radius:10px;background:#121212;display:grid;grid-template-columns:1fr 1fr;place-items:center;font-size:40px"><span style="font-weight:500;color:#e6e6e6">4</span><span style="font-weight:700;color:#148A42;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff">7</span></div><div style="font-size:12px;color:#6b6860">Dark-mode app</div></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;font-size:14px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.06em;color:#6b6860">OUTLINE STATES</div>
+<div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:0;border-top:3px solid #fff;box-shadow:0 0 0 1px #999"></span>Searching · white frame</div>
+<div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:0;border-top:3px solid #F2B530"></span>Reading · amber</div>
+<div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:0;border-top:3px dashed #F2B530"></span>Hold steady · dashed amber</div>
+<div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:0;border-top:3px solid #4ADE80"></span>Solved · bright green</div>
+<div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:0;border-top:3px solid #FF8A70"></span>Needs review · coral</div>
+</div>
+<div style="font-size:13px;line-height:1.5;color:#6b6860;text-wrap:pretty">Outlines use brighter tints than the digits because they sit on the darker table edge, not on paper. All on-camera text sits on an 82–88% dark scrim.</div>
+</div>
+</div>
+</div>
+<p class="dv-next">Try next: "make the controls a floating pill instead of a bottom bar" · "show the solved state over a dark-mode puzzle app screenshot" · "add an onboarding/permission screen"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const P="530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+const S="534678912672195348198342567859761423426853791713924856961537284287419635345286179";
+const LOW={0:{r:'6',p:41},41:{r:'8',p:38},55:{r:'6',p:64},71:{r:'6',p:52}};
+let READ=P.split('');Object.keys(LOW).forEach(k=>READ[k]=LOW[k].r);
+const BLANKS=[];for(let i=0;i<81;i++)if(P[i]==='0')BLANKS.push(i);
+const HINTS=BLANKS.slice().sort((a,b)=>((a*37)%81)-((b*37)%81));
+const SEQ=[1,1,2,2,3,'h','h','h',3,4,4,5,5,5];
+const boxes=fn=>Array.from({length:9},(_,b)=>({cells:Array.from({length:9},(_,k)=>{const r=Math.floor(b/3)*3+Math.floor(k/3),c=(b%3)*3+k%3;return fn(r*9+c,r,c);})}));
+const fresh=mode=>({mode,t:0,loop:false,pin:false,flash:false,frozen:false,hint:0,fixes:{},sel:null,msg:''});
+class Component extends DCLogic {
+  state={phones:[fresh('scan'),{...fresh('read'),loop:true},{...fresh('read'),pin:true},fresh('solved'),fresh('fail'),fresh('hint')]};
+  componentDidMount(){this.iv=setInterval(()=>this.setState(s=>({phones:s.phones.map(p=>{if(p.mode!=='read'||p.pin)return p;const t=p.t+1;if(!p.loop&&t>=SEQ.length)return{...p,mode:'solved',t:0};return{...p,t:p.loop?t%SEQ.length:t};})})),750);}
+  componentWillUnmount(){clearInterval(this.iv);}
+  upd(i,patch){this.setState(s=>({phones:s.phones.map((p,j)=>j===i?{...p,...(typeof patch==='function'?patch(p):patch)}:p)}));}
+  screen(p,i){
+    const m=p.mode,meta=[['1a','Scanning','Tap the camera to simulate a detection. Flash toggle is live on every screen.'],['1b','Reading','Animated: progress steps 1→5 with a hold-steady pause, then loops.'],['1c','Reading · Hold steady','Movement detected: outline goes dashed, progress pauses.'],['1d','Solved','Answers drawn in the empty cells. Freeze, Hint and Reset work.'],['1e','Can’t solve','Low-confidence cells in amber. Tap any cell to correct it. Correct values here: 5, 3, 6, 5 — then Solve again.'],['1f','Hint mode','One revealed cell at a time; Next hint moves to another cell.']][i];
+    const v=p.pin?'h':SEQ[Math.min(p.t,SEQ.length-1)],hold=v==='h',step=hold?3:v;
+    const hintIdx=HINTS[p.hint%HINTS.length];
+    const o={scan:null,read:hold?['#F2B530','dashed','rgba(242,181,48,.3)']:['#F2B530','solid','rgba(242,181,48,.55)'],solved:['#4ADE80','solid','rgba(74,222,128,.55)'],hint:['#4ADE80','solid','rgba(74,222,128,.45)'],fail:['#FF8A70','solid','rgba(255,138,112,.5)']}[m];
+    const chip={scan:['Searching','#ffffff',0],read:['Puzzle found','#F2B530',1],solved:p.frozen?['Frozen','#9ecbff',1]:['Solved','#4ADE80',1],hint:['Hint mode','#4ADE80',1],fail:['Needs review','#FF8A70',1]}[m];
+    const val=idx=>p.fixes[idx]!==undefined?p.fixes[idx]:READ[idx];
+    const lowCount=Object.keys(LOW).filter(k=>p.fixes[k]===undefined).length;
+    const sel=p.sel;
+    return {
+      id:meta[0],label:meta[1],caption:meta[2],
+      isScan:m==='scan',isRead:m==='read',isSolved:m==='solved',isHint:m==='hint',isFail:m==='fail',
+      camCursor:m==='scan'?'pointer':'default',onCamera:m==='scan'?()=>this.upd(i,{mode:'read',t:0,loop:false,pin:false}):undefined,
+      blur:m==='scan'?'blur(.6px)':'none',
+      boxes:boxes(idx=>{const g=P[idx]!=='0'?P[idx]:'';const hint=m==='hint'&&idx===hintIdx;return{g,a:S[idx],hint,showA:!g&&(m==='solved'||hint)};}),
+      hasOutline:!!o,oColor:o?o[0]:'',oStyle:o?o[1]:'solid',oGlow:o?o[2]:'transparent',
+      chip:chip[0],chipColor:chip[1],chipOpacity:chip[2],
+      flash:p.flash,flashIcon:p.flash?'flash_on':'flash_off',flashBg:p.flash?'#FFE08A':'rgba(18,18,20,.8)',flashFg:p.flash?'#1c1b1f':'#fff',onFlash:e=>{e&&e.stopPropagation();this.upd(i,q=>({flash:!q.flash}));},
+      readTitle:hold?'Hold steady':`Reading digits… ${step}/5`,readSub:hold?`Too much movement. Paused at ${step}/5.`:'Keep the whole grid in view',readIcon:hold?'back_hand':'document_scanner',readIconBg:hold?'#FFFFFF':'#F2B530',
+      segs:[1,2,3,4,5].map(n=>({bg:n<=step?(hold?'rgba(242,181,48,.45)':'#F2B530'):'rgba(255,255,255,.2)'})),
+      freezeBg:p.frozen?'#D6E8FF':'transparent',freezeFg:p.frozen?'#0d2a4a':'#fff',freezeIcon:p.frozen?'play_arrow':'pause',freezeLabel:p.frozen?'Live':'Freeze',
+      onFreeze:()=>this.upd(i,q=>({frozen:!q.frozen})),onHint:()=>this.upd(i,{mode:'hint',hint:0}),onReset:()=>this.upd(i,fresh('scan')),
+      hintEyebrow:`HINT ${p.hint+1} OF ${HINTS.length}`,hintTitle:`Row ${Math.floor(hintIdx/9)+1}, column ${hintIdx%9+1}`,
+      onNextHint:()=>this.upd(i,q=>({hint:(q.hint+1)%HINTS.length})),onExitHint:()=>this.upd(i,{mode:'solved'}),
+      failSub:lowCount?`${lowCount} digit${lowCount>1?'s':''} may be misread. Tap to fix.`:'All checked. Try solving again.',
+      failMsg:p.msg,noSheet:sel===null,hasSheet:sel!==null,
+      fboxes:boxes(idx=>{const d=val(idx),low=LOW[idx]&&p.fixes[idx]===undefined,fixed=p.fixes[idx]!==undefined,isSel=idx===sel;
+        return{d:d==='0'?'':d,bg:isSel?'#fff':low?'#FFE3A3':fixed?'#D9F2E2':'#fbfaf7',ring:isSel?'inset 0 0 0 3px #1c1b1f':low?'inset 0 0 0 2px #C98A00':fixed?'inset 0 0 0 2px #148A42':'none',fg:fixed?'#0d6b32':'#1c1b1f',fw:low||fixed?700:500,onTap:()=>this.upd(i,{sel:idx,msg:''})};}),
+      sheetTitle:sel!==null?`Row ${Math.floor(sel/9)+1}, column ${sel%9+1}`:'',
+      sheetSub:sel!==null?(LOW[sel]?`Read as ${LOW[sel].r} · ${LOW[sel].p}% sure`:(READ[sel]==='0'?'Read as empty':`Read as ${READ[sel]}`)):'',
+      digits:['1','2','3','4','5','6','7','8','9','0'].map(d=>{const cur=sel!==null&&val(sel)===d;return{label:d==='0'?'backspace':d,ff:d==='0'?"'Material Symbols Rounded'":'Figtree, sans-serif',bg:cur?'#D9F2E2':'#ECE8E0',ring:cur?'inset 0 0 0 2px #148A42':'none',onPick:()=>this.upd(i,q=>({fixes:{...q.fixes,[q.sel]:d},sel:null}))};}),
+      onCloseSheet:()=>this.upd(i,{sel:null}),
+      onSolve:()=>this.upd(i,q=>{for(let k=0;k<81;k++){const d=q.fixes[k]!==undefined?q.fixes[k]:READ[k];if(d!==P[k])return{msg:'Still conflicting. Check the amber cells again.'};}return{mode:'solved',msg:''};})
+    };
+  }
+  renderVals(){return{screens:this.state.phones.map((p,i)=>this.screen(p,i))};}
+}
+</script>
+</body>
+</html>
