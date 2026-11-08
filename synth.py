@@ -15,7 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 from solver import solve
 
 CONDITIONS = ["clean", "tilt", "rotate", "shadow", "glare", "blur",
-              "low_res", "jpeg", "dark_mode", "touching_lines", "pen_marks", "pencil"]
+              "low_res", "jpeg", "dark_mode", "touching_lines", "pen_marks", "pencil",
+              "rotate_steep"]  # appended last: earlier conditions keep the same images per seed
 USER_INK = ("pen_marks", "pencil")  # colour conditions: a started puzzle
 
 
@@ -182,5 +183,7 @@ def make_sample(cond, fonts):
         board = draw_user_ink(board, puzzle, solution, pencil=(cond == "pencil"))
     tilt = 0.12 if cond == "tilt" else 0.04
     angle = random.uniform(-25, 25) if cond == "rotate" else random.uniform(-3, 3)
+    if cond == "rotate_steep":  # phone held at 45-90 degrees to the page, either way
+        angle = random.uniform(45, 90) * random.choice((-1, 1))
     page = place_on_page(board, tilt=tilt, angle=angle, touching=(cond == "touching_lines"))
     return apply_condition(page, cond), puzzle, solution

@@ -373,6 +373,13 @@ the printed reading. inspect_photo.py reads both.
   **blur 70%** (6 no_grid). Before the vote on the same machine: 91%, blur 30%.
   With ignore-user-ink (2026-11-08): those 10 unchanged, plus pen_marks 100%,
   pencil 0% (expected, v1.1) -> 88% total over 240.
+  rotate_steep (page at 45-90 deg, added 2026-11-08, appended so the others keep their
+  images): **0%** (19 unsolvable, 1 too_few) -> 81% over 260. Cause measured with an
+  angle sweep: the grid is found at every angle and digits read 99-100% once the warp is
+  turned upright, but `order_corners` labels corners by screen position, so past 45 deg
+  the warp is a quarter turn off and digits are read sideways (2-5% right). Not a model
+  problem: an orientation problem. Confidence of the model picks the right quarter turn
+  in 149/150 samples (0-360 deg, 7 conditions), but margins are thin (>= 0.010).
 - Real photos: **4 of 4 solve (100%)** since ignore-user-ink: puzzle1's 56 red-pen
   cells are ignored and its 25 printed digits solve it. Before that (75%), **3 of 4
   solved:** puzzle2, puzzle3 and puzzle4 are blank newspaper puzzles (3 and 4 are two
