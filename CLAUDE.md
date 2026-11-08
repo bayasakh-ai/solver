@@ -104,10 +104,16 @@ architecture and rules.
   strokes not fills. Theme: `ui/theme/` (`SudokuLensTheme`, `CameraChrome` for the dark
   chrome over the camera, `SudokuTheme.colors` for non-Material colours).
 - **Answer digits:** one fixed hue in **two fixed steps**: deep on paper with a light
-  halo, bright on dark screens with a dark halo. The step is picked per cell from the
-  background behind it (`AnswerPalette.stepFor`: the step with the higher contrast;
-  switch near luminance 0.24 = camera Y ~134 after linearising). Answers are semibold
-  serif, so they also differ from printed digits by weight and shape.
+  halo, bright on dark screens with a dark halo. The grid's dark-mode vote (camera
+  polarity) sets the default step; a single cell switches only when the other step is
+  **2x better** against the background behind it (median luma, `AnswerPalette.stepFor`),
+  i.e. a real shadow: Ink blue on paper switches at Y <= 109 and comes back at Y >= 114
+  (hysteresis + smoothing in `AnswerSteps`). Why not "higher contrast wins": grey
+  newsprint (photos/puzzle4, Y 113-147) split 33 pale / 22 deep while both steps were
+  only 1.5-2.8:1 there. Measured (2026-11-08): paper conditions and real photos ~100%
+  deep (1/223 photo cells switched), dark_mode 100% bright, synth hard shadow switches
+  55% of cells (shadow side Y 51-109, where bright is up to 4x better). Answers are
+  semibold serif, so they also differ from printed digits by weight and shape.
 - **Colorblind-safe by default — never color as the only signal.** Grid outline: dashed
   while reading, dotted on hold steady, solid when solved, double when it needs review.
   Unsure cells: ring; corrected cells: underline. **Warnings are coral, always paired

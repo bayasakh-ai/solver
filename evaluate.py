@@ -71,15 +71,17 @@ def step_counts(res, truth_puzzle):
     bg = res.get("backgrounds")
     if bg is None:
         return None
-    steps = [step_for(bg[r * 9 + c]) for r in range(9) for c in range(9) if truth_puzzle[r][c] == 0]
+    screen = res.get("screen", False)
+    steps = [step_for(bg[r * 9 + c], screen) for r in range(9) for c in range(9) if truth_puzzle[r][c] == 0]
     return steps.count(DEEP), steps.count(BRIGHT)
 
 
 def report_steps(steps):
     """Which answer step empty cells get (Ink blue, one frame, no hysteresis).
     Expected: BRIGHT for dark_mode (a dark screen), DEEP for everything on paper.
-    'mixed' = grids whose empty cells don't all get the same step (e.g. a hard
-    shadow across paper). Reported, not judged: the rule is per cell on purpose."""
+    'mixed' = grids whose empty cells don't all get the same step; 'unexpected' =
+    cells that switched away from the grid's default. Under the 2x rule only a real
+    shadow should do that, so it is reported, not judged."""
     width = max(len(k) for k in steps) + 2
     print("\nanswer steps (empty cells, Ink blue, single frame)")
     print(f"{'condition':<{width}} {'grids':>5} {'cells':>6} {'deep':>6} {'bright':>7} {'mixed':>6} {'unexpected':>11}")

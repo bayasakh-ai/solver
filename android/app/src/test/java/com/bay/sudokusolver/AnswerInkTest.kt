@@ -80,46 +80,59 @@ class AnswerInkTest {
         assertTrue(ColorMath.distance(0x6FE39A, SignalColors.HINT_STROKE_DARK, ColorVision.PROTAN) < 0.03)
     }
 
+    private fun y(v: Int) = ColorMath.luminanceFromLuma(v)
+
     @Test
-    fun stepSwitchesAtMidGrey() {
+    fun gridDefaultHoldsOnGreyPaperAndSwitchesOnlyInRealShadow() {
         val p = AnswerPalette.INK_BLUE
-        assertEquals(AnswerStep.DEEP, p.stepFor(1.0))
-        assertEquals(AnswerStep.DEEP, p.stepFor(ColorMath.luminance(0xE8E2D6)))   // newsprint
-        assertEquals(AnswerStep.BRIGHT, p.stepFor(ColorMath.luminance(0x161616))) // dark-mode app
-        assertEquals(AnswerStep.BRIGHT, p.stepFor(0.0))
-        // Crossover: equal contrast when (L+0.05)^2 = (Ldeep+0.05)(Lbright+0.05) -> L ~ 0.2375.
-        assertEquals(AnswerStep.DEEP, p.stepFor(0.25))
-        assertEquals(AnswerStep.BRIGHT, p.stepFor(0.22))
+        // paper: deep everywhere, including grey newsprint (puzzle4: Y 113-147)
+        for (v in listOf(255, 220, 147, 134, 120, 113, 110)) assertEquals("paper Y $v", AnswerStep.DEEP, p.stepFor(y(v)))
+        // a real shadow: bright is >= 2x better from Y 109 down (Y 74: 5.0:1 vs 1.2:1)
+        for (v in listOf(109, 100, 74, 0)) assertEquals("shadow Y $v", AnswerStep.BRIGHT, p.stepFor(y(v)))
+        // dark screen: bright, unless a cell is light enough (Y >= 162) for deep to win 2x
+        for (v in listOf(0, 22, 100, 155, 161)) assertEquals("screen Y $v", AnswerStep.BRIGHT, p.stepFor(y(v), screen = true))
+        for (v in listOf(162, 220, 255)) assertEquals("screen Y $v", AnswerStep.DEEP, p.stepFor(y(v), screen = true))
     }
 
     @Test
     fun cameraLumaIsLinearisedBeforeChoosing() {
-        val p = AnswerPalette.INK_BLUE
-        // Switch sits near Y = 134 once linearised (not Y = 61 as Y/255 would suggest).
-        assertEquals(AnswerStep.DEEP, p.stepFor(ColorMath.luminanceFromLuma(140)))
-        assertEquals(AnswerStep.BRIGHT, p.stepFor(ColorMath.luminanceFromLuma(128)))
-        assertEquals(AnswerStep.BRIGHT, p.stepFor(ColorMath.luminanceFromLuma(80)))
+        // Treating Y/255 as linear would call Y 120 luminance 0.47 (deep far ahead);
+        // linearised it is 0.19, where deep is only 1.7:1 and bright 2.5:1.
+        assertEquals(0.188, y(120), 0.001)
+        assertEquals(1.46, AnswerPalette.INK_BLUE.advantage(y(120), AnswerStep.DEEP), 0.01)
     }
 
     private fun flat(y: Int) = IntArray(81) { y }
 
     @Test
-    fun hysteresisHoldsInsideTheDeadBand() {
-        // Ink blue: plain switch at Y 134; with 15% hysteresis DEEP -> BRIGHT at Y <= 128,
-        // BRIGHT -> DEEP at Y >= 140 (computed in answer_ink.py, same formulas).
+    fun hysteresisHoldsAtTheShadowEdge() {
+        // Ink blue on paper: to bright at Y <= 109, back to deep only at Y >= 114
+        // (2x, then 2x / 1.15; computed in answer_ink.py with the same formulas).
         val steps = AnswerSteps()
         val p = AnswerPalette.INK_BLUE
         assertEquals(AnswerStep.DEEP, steps.update(flat(200), p)[0])
-        // drift down slowly (smoothing converges) and stop inside the band: stays DEEP
-        repeat(30) { steps.update(flat(130), p) }
-        assertEquals(AnswerStep.DEEP, steps.update(flat(130), p)[0])
-        repeat(30) { steps.update(flat(128), p) }
-        assertEquals(AnswerStep.BRIGHT, steps.update(flat(128), p)[0])
-        // back up into the band: stays BRIGHT until Y 140
-        repeat(30) { steps.update(flat(139), p) }
-        assertEquals(AnswerStep.BRIGHT, steps.update(flat(139), p)[0])
-        repeat(30) { steps.update(flat(140), p) }
-        assertEquals(AnswerStep.DEEP, steps.update(flat(140), p)[0])
+        repeat(30) { steps.update(flat(110), p) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(110), p)[0])
+        repeat(30) { steps.update(flat(109), p) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(109), p)[0])
+        repeat(30) { steps.update(flat(113), p) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(113), p)[0])
+        repeat(30) { steps.update(flat(114), p) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(114), p)[0])
+    }
+
+    @Test
+    fun hysteresisOnAScreen() {
+        // dark screen: to deep at Y >= 162, back to bright at Y <= 155
+        val steps = AnswerSteps()
+        val p = AnswerPalette.INK_BLUE
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(20), p, screen = true)[0])
+        repeat(30) { steps.update(flat(162), p, screen = true) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(162), p, screen = true)[0])
+        repeat(30) { steps.update(flat(156), p, screen = true) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(156), p, screen = true)[0])
+        repeat(30) { steps.update(flat(155), p, screen = true) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(155), p, screen = true)[0])
     }
 
     @Test
@@ -135,21 +148,24 @@ class AnswerInkTest {
     fun cellsChooseIndependentlyAndResetStartsFresh() {
         val steps = AnswerSteps()
         val p = AnswerPalette.INK_BLUE
-        val half = IntArray(81) { if (it % 9 < 4) 220 else 60 } // shadow over the right side
+        val half = IntArray(81) { if (it % 9 < 4) 220 else 70 } // hard shadow over the right side
         val s = steps.update(half, p)
         assertEquals(AnswerStep.DEEP, s[0])
         assertEquals(AnswerStep.BRIGHT, s[8])
         steps.reset()
-        assertEquals(AnswerStep.BRIGHT, steps.update(flat(30), p)[0]) // no lag from the old grid
+        // without the reset, cell 0 would be smoothed to 220 + 0.3 * (30 - 220) = 163 -> deep
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(30), p)[0])
     }
 
     @Test
-    fun paletteChangeRechoosesWithoutHysteresis() {
+    fun paletteOrScreenChangeRechoosesWithoutHysteresis() {
         val steps = AnswerSteps()
-        repeat(30) { steps.update(flat(125), AnswerPalette.INK_BLUE) }
-        assertEquals(AnswerStep.BRIGHT, steps.update(flat(125), AnswerPalette.INK_BLUE)[0])
-        // High contrast's switch is at Y 115, so Y 125 is DEEP for it straight away
-        assertEquals(AnswerStep.DEEP, steps.update(flat(125), AnswerPalette.HIGH_CONTRAST)[0])
+        repeat(30) { steps.update(flat(100), AnswerPalette.INK_BLUE) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(100), AnswerPalette.INK_BLUE)[0])
+        // High contrast's deep is darker, so its paper switch is lower (Y <= 91): Y 100 is deep
+        assertEquals(AnswerStep.DEEP, steps.update(flat(100), AnswerPalette.HIGH_CONTRAST)[0])
+        // the same cells judged as a dark screen default to bright at once
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(100), AnswerPalette.HIGH_CONTRAST, screen = true)[0])
     }
 
     @Test

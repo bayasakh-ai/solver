@@ -114,14 +114,16 @@ def _process_once(img, model, searched_inverted=False):
     backgrounds = cell_backgrounds(warped)
     if searched_inverted:
         backgrounds = [255 - v for v in backgrounds]
-    if looks_dark(warped):  # the cells decide, not the whole photo (shadows fool that)
+    dark = looks_dark(warped)
+    if dark:  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
+    screen = dark != searched_inverted  # dark page in the CAMERA's view: answers default bright
     # user ink (coloured pen) is removed before reading: solve from printed digits only
     cells, ink = extract_cells(warped, chroma_planes(img, corners))
     read, probs = read_digits(cells, model)
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
-              "ink": ink, "backgrounds": backgrounds}
+              "ink": ink, "backgrounds": backgrounds, "screen": screen}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

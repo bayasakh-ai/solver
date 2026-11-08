@@ -4,13 +4,16 @@ SAME numbers (BackgroundParityTest, plain JVM, no phone).
 
 Writes one PNG per grid (lossless grayscale, 450x450, stored in the polarity the
 grid was FOUND in, like the app's warp) and expected.txt lines
-`name searched_inverted m0 .. m80 steps_ink_blue steps_high_contrast`
-into android/app/src/test/resources/background/. m = camera-polarity medians;
+`name searched_inverted screen m0 .. m80 steps_ink_blue steps_high_contrast`
+into android/app/src/test/resources/background/. screen = dark-mode vote in camera
+polarity (looks_dark != searched_inverted); m = camera-polarity medians;
 steps = 81 chars of D/B (single frame, no hysteresis).
 
 Cases: synthetic paper/shadow/glare/dark_mode/low_res, the real photos, and edge
 grids for the median rule (even split -> lower value) and for luma values either
-side of each palette's switch point (Ink blue Y 133/134, High contrast 114/115).
+side of each palette's switch points (paper: Ink blue Y 109/110, High contrast 91/92;
+screen: Ink blue 161/162, High contrast 140/141). The two edge grids get opposite
+dark-mode votes, so both defaults (paper and screen) are covered.
 Re-run after changing cell_backgrounds / answer_ink.py, then run the JVM tests."""
 import os
 import random
@@ -18,7 +21,7 @@ import random
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, cell_backgrounds, WARP_SIZE
+from grid import preprocess, find_grid, warp, cell_backgrounds, looks_dark, WARP_SIZE
 from answer_ink import step_for
 from synth import make_sample
 from make_digits import load_fonts
@@ -39,8 +42,8 @@ def warped_from(gray):
 
 def edge_grid():
     """Flat cells at chosen lumas, plus cells split exactly in half (even count)."""
-    values = [0, 30, 60, 90, 110, 114, 115, 116, 120, 128, 129, 133, 134, 135, 139, 140,
-              160, 200, 255]
+    values = [0, 30, 60, 90, 91, 92, 100, 109, 110, 114, 120, 134, 140, 141, 155, 161,
+              162, 200, 255]
     step = WARP_SIZE // 9
     g = np.empty((WARP_SIZE, WARP_SIZE), np.uint8)
     for k in range(81):
@@ -90,10 +93,11 @@ def main():
         bg = cell_backgrounds(w)
         if inv:
             bg = [255 - v for v in bg]
-        ink = "".join(step_for(v, "INK_BLUE") for v in bg)
-        hc = "".join(step_for(v, "HIGH_CONTRAST") for v in bg)
-        lines.append(f"{name} {int(inv)} {' '.join(map(str, bg))} {ink} {hc}")
-        print(f"{name:<18} inv={int(inv)} median range {min(bg)}-{max(bg)}  "
+        screen = looks_dark(w) != inv
+        ink = "".join(step_for(v, screen, "INK_BLUE") for v in bg)
+        hc = "".join(step_for(v, screen, "HIGH_CONTRAST") for v in bg)
+        lines.append(f"{name} {int(inv)} {int(screen)} {' '.join(map(str, bg))} {ink} {hc}")
+        print(f"{name:<18} inv={int(inv)} screen={int(screen)} median range {min(bg)}-{max(bg)}  "
               f"ink blue {ink.count('D')}D/{ink.count('B')}B")
     with open(os.path.join(OUT, "expected.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")

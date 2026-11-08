@@ -1,8 +1,13 @@
 """Answer-digit step choice, mirrored from AnswerInk.kt (Android).
 
-Answers use one hue in two fixed steps: DEEP on paper, BRIGHT on dark screens. Each
-empty cell gets the step with the higher contrast against the background behind it,
-measured as the median camera luma of the cell (grid.cell_backgrounds).
+Answers use one hue in two fixed steps: DEEP on paper, BRIGHT on dark screens.
+The grid decides the default: the dark-mode vote (looks_dark, in camera polarity)
+says paper -> DEEP or screen -> BRIGHT. A single cell switches to the other step
+only when that step's contrast against the cell's background (median camera luma,
+grid.cell_backgrounds) is at least SWITCH (2x) better, i.e. a real shadow on paper
+(Ink blue: Y <= 109). Grey newsprint keeps one shade instead of splitting in two:
+in Y 113-147 both steps are only 1.5-2.8:1 and the halo does the work anyway
+(measured on photos/puzzle4, 2026-11-08).
 
 Only the single-frame rule lives here (for evaluate.py's step report and the
 parity fixtures). The app adds frame-to-frame smoothing and hysteresis on top
@@ -38,7 +43,18 @@ def contrast(l1, l2):
     return (hi + 0.05) / (lo + 0.05)
 
 
-def step_for(background_luma, palette="INK_BLUE"):
+SWITCH = 2.0  # the other step must beat the grid's default by this contrast factor
+
+
+def advantage(background_luma, default, palette="INK_BLUE"):
+    """Contrast of the non-default step / contrast of the default step."""
     deep, bright = PALETTES[palette]
     bg = luminance_from_luma(background_luma)
-    return DEEP if contrast(luminance(deep), bg) >= contrast(luminance(bright), bg) else BRIGHT
+    c_deep, c_bright = contrast(luminance(deep), bg), contrast(luminance(bright), bg)
+    return c_bright / c_deep if default == DEEP else c_deep / c_bright
+
+
+def step_for(background_luma, screen=False, palette="INK_BLUE"):
+    """screen = the grid is a dark screen (dark-mode vote, camera polarity)."""
+    default, other = (BRIGHT, DEEP) if screen else (DEEP, BRIGHT)
+    return other if advantage(background_luma, default, palette) >= SWITCH else default

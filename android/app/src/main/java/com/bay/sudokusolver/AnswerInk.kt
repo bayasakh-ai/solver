@@ -19,7 +19,11 @@ import kotlin.math.sqrt
  */
 
 /** The two lightness steps of an answer palette. */
-enum class AnswerStep { DEEP, BRIGHT }
+enum class AnswerStep {
+    DEEP, BRIGHT;
+
+    fun other() = if (this == DEEP) BRIGHT else DEEP
+}
 
 /**
  * Answer palettes offered in Settings. Each entry must pass AnswerInkTest: enough
@@ -47,18 +51,33 @@ enum class AnswerPalette(val deep: Int, val bright: Int, val haloScale: Float) {
     fun halo(step: AnswerStep): Int = if (step == AnswerStep.DEEP) 0xFFFFFF else 0x000000
 
     /**
-     * Step with the higher contrast against a background of the given relative
-     * luminance (0 = black, 1 = white). For INK_BLUE the switch is at about 0.24,
-     * a mid grey near #868686.
+     * Contrast of the non-default step / contrast of [default], against a background
+     * of relative luminance [backgroundLuminance] (0 = black, 1 = white).
      */
-    fun stepFor(backgroundLuminance: Double): AnswerStep {
-        val deepContrast = ColorMath.contrast(ColorMath.luminance(deep), backgroundLuminance)
-        val brightContrast = ColorMath.contrast(ColorMath.luminance(bright), backgroundLuminance)
-        return if (deepContrast >= brightContrast) AnswerStep.DEEP else AnswerStep.BRIGHT
+    fun advantage(backgroundLuminance: Double, default: AnswerStep): Double {
+        val cDeep = ColorMath.contrast(ColorMath.luminance(deep), backgroundLuminance)
+        val cBright = ColorMath.contrast(ColorMath.luminance(bright), backgroundLuminance)
+        return if (default == AnswerStep.DEEP) cBright / cDeep else cDeep / cBright
+    }
+
+    /**
+     * Step for one cell. The grid decides the default ([screen] = the dark-mode vote
+     * in camera polarity: dark screen -> BRIGHT, paper -> DEEP); the cell switches
+     * only when the other step is at least [SWITCH] times better, i.e. a real shadow
+     * (Ink blue on paper: Y <= 109). Grey newsprint keeps one shade: measured on
+     * photos/puzzle4 (paper Y 113-147), a plain "higher contrast wins" rule split it
+     * 33 pale / 22 deep while both steps were only 1.5-2.8:1 there.
+     */
+    fun stepFor(backgroundLuminance: Double, screen: Boolean = false): AnswerStep {
+        val default = defaultStep(screen)
+        return if (advantage(backgroundLuminance, default) >= SWITCH) default.other() else default
     }
 
     companion object {
         val DEFAULT = INK_BLUE
+        const val SWITCH = 2.0
+
+        fun defaultStep(screen: Boolean) = if (screen) AnswerStep.BRIGHT else AnswerStep.DEEP
     }
 }
 
@@ -142,38 +161,48 @@ object CellBackground {
  * Per-cell answer step for the live overlay, stable from frame to frame:
  *  - each cell's background is smoothed (exponential average, [SMOOTHING] of the
  *    new frame), so sensor noise and auto-exposure steps don't jump it;
- *  - a cell only changes step when the other step's contrast beats the current
- *    one by [HYSTERESIS] (15%), so a cell sitting at the switch point (~Y 134)
- *    doesn't flicker between deep and bright.
+ *  - the grid's default step comes from the dark-mode vote ([AnswerPalette.stepFor]);
+ *    a cell leaves it when the other step is [AnswerPalette.SWITCH] (2x) better and
+ *    only returns once that advantage drops below 2x / [HYSTERESIS] (1.15x), so a
+ *    cell at a shadow's edge doesn't flicker. Ink blue on paper: to bright at
+ *    Y <= 109, back to deep at Y >= 114; on a screen: to deep at Y >= 162, back
+ *    at Y <= 155.
+ * A palette change or a paper/screen flip re-chooses every cell from scratch.
  * Analysis thread only. [reset] when the grid is lost.
  */
 class AnswerSteps {
     private var smoothed: FloatArray? = null
     private var steps: Array<AnswerStep>? = null
     private var lastPalette: AnswerPalette? = null
+    private var lastScreen: Boolean? = null
 
     fun reset() {
         smoothed = null
         steps = null
         lastPalette = null
+        lastScreen = null
     }
 
-    fun update(backgrounds: IntArray, palette: AnswerPalette): Array<AnswerStep> {
+    fun update(backgrounds: IntArray, palette: AnswerPalette, screen: Boolean = false): Array<AnswerStep> {
         require(backgrounds.size == 81)
         val s = smoothed?.also { prev ->
             for (i in 0 until 81) prev[i] += SMOOTHING * (backgrounds[i] - prev[i])
         } ?: FloatArray(81) { backgrounds[it].toFloat() }
         smoothed = s
 
-        val prev = steps.takeIf { palette == lastPalette }
+        val prev = steps.takeIf { palette == lastPalette && screen == lastScreen }
         lastPalette = palette
+        lastScreen = screen
+        val default = AnswerPalette.defaultStep(screen)
         val next = Array(81) { i ->
             val bg = ColorMath.luminanceFromLuma(s[i].roundToInt())
-            val current = prev?.get(i) ?: return@Array palette.stepFor(bg)
-            val other = if (current == AnswerStep.DEEP) AnswerStep.BRIGHT else AnswerStep.DEEP
-            val cCur = ColorMath.contrast(ColorMath.luminance(palette.color(current)), bg)
-            val cOther = ColorMath.contrast(ColorMath.luminance(palette.color(other)), bg)
-            if (cOther >= cCur * HYSTERESIS) other else current
+            val current = prev?.get(i) ?: return@Array palette.stepFor(bg, screen)
+            val adv = palette.advantage(bg, default)
+            when {
+                current == default && adv >= AnswerPalette.SWITCH -> default.other()
+                current != default && adv < AnswerPalette.SWITCH / HYSTERESIS -> default
+                else -> current
+            }
         }
         steps = next
         return next

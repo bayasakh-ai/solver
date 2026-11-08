@@ -91,17 +91,20 @@ class FrameAnalyzer(
                 m.release()
                 val pixels = ByteArray(warped.rows() * warped.cols())
                 warped.get(0, 0, pixels)
-                // background behind each cell, in camera polarity (pixels are pre-flip;
-                // undo an inverted search) -> answer colour step. Every frame: answers are
-                // redrawn every frame and shadows move with the hand.
-                val stepsStart = System.nanoTime()
-                val backgrounds = CellBackground.medians(pixels, warped.cols(), inverted = searchedInverted)
-                val steps = answerSteps.update(backgrounds, palette)
-                val stepsMicros = (System.nanoTime() - stepsStart) / 1_000
                 // the cells decide: digits must be dark-on-light for binarize + the model
-                if (polarity.onFound(searchedInverted, Polarity.looksDark(pixels, warped.cols()))) {
+                val looksDark = Polarity.looksDark(pixels, warped.cols())
+                if (polarity.onFound(searchedInverted, looksDark)) {
                     Core.bitwise_not(warped, warped)
                 }
+                // answer colour step per cell: the grid's default from the vote in camera
+                // polarity (dark screen -> bright), single cells switch only in real shadow.
+                // Backgrounds come from the pre-flip pixels with the inverted search undone.
+                // Every frame: answers are redrawn every frame and shadows move with the hand.
+                val stepsStart = System.nanoTime()
+                val screen = looksDark != searchedInverted
+                val backgrounds = CellBackground.medians(pixels, warped.cols(), inverted = searchedInverted)
+                val steps = answerSteps.update(backgrounds, palette, screen)
+                val stepsMicros = (System.nanoTime() - stepsStart) / 1_000
                 val sharp = sharpness(warped) // Laplacian variance: same either polarity
                 val isSharp = sharp > SHARP_ENOUGH
                 // colour only for frames that get read: copying + warping U/V costs time
