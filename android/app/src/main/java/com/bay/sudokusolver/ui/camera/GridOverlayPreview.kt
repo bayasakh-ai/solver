@@ -1,0 +1,77 @@
+package com.bay.sudokusolver.ui.camera
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
+import com.bay.sudokusolver.AnswerStep
+import com.bay.sudokusolver.FrameResult
+import com.bay.sudokusolver.ScanState
+import com.bay.sudokusolver.Solver
+import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+
+/*
+ * Android Studio previews of the overlay on a fake frame (no camera): one per
+ * outline state, plus a half-shadowed grid where cells switch step.
+ * Same puzzle as the design files (puzzle3).
+ */
+
+private val PUZZLE = Solver.parse(
+    "005031040001000008794600000002000003900000005300000800000003517500000600070820900")
+private val SOLUTION = Solver.parse(
+    "685731249231549768794682351462958173918376425357214896829463517543197682176825934")
+
+/** Slightly tilted grid in a 480x640 portrait frame. */
+private val CORNERS = floatArrayOf(52f, 150f, 432f, 138f, 440f, 520f, 44f, 530f)
+
+private fun fake(state: ScanState, solved: Boolean, steps: Array<AnswerStep>? = null,
+                 unsure: BooleanArray? = null) = FrameResult(
+    corners = CORNERS, frameWidth = 480, frameHeight = 640, warped = null, sharpness = 140.0,
+    digits = 26, processMs = 5, fps = 30.0, state = state,
+    puzzle = if (solved) PUZZLE else null, solution = if (solved) SOLUTION else null,
+    unsure = unsure, steps = steps,
+)
+
+@Composable
+private fun Stage(background: Brush, result: FrameResult?) {
+    SudokuLensTheme {
+        Box(Modifier.fillMaxSize().background(background)) {
+            GridOverlay(result, Modifier.fillMaxSize())
+        }
+    }
+}
+
+private val paper = Brush.linearGradient(listOf(Color(0xFFE8E2D6), Color(0xFFCFC8BB)))
+private val screen = Brush.linearGradient(listOf(Color(0xFF1C1D21), Color(0xFF0F1012)))
+private val shadow = Brush.horizontalGradient(
+    0f to Color(0xFFE8E2D6), 0.5f to Color(0xFFE0DACE), 0.56f to Color(0xFF4A4740), 1f to Color(0xFF3A3833))
+
+@Preview(name = "Searching", widthDp = 360, heightDp = 780)
+@Composable private fun PSearching() = Stage(paper, null)
+
+@Preview(name = "Reading · dashed", widthDp = 360, heightDp = 780)
+@Composable private fun PReading() = Stage(paper, fake(ScanState.Reading(3, 5), solved = false,
+    unsure = BooleanArray(81) { it == 4 || it == 40 }))
+
+@Preview(name = "Hold steady · dotted", widthDp = 360, heightDp = 780)
+@Composable private fun PHold() = Stage(paper, fake(ScanState.HoldSteady(3, 5), solved = false))
+
+@Preview(name = "Solved on paper", widthDp = 360, heightDp = 780)
+@Composable private fun PSolvedPaper() = Stage(paper, fake(ScanState.Solved(0), solved = true,
+    steps = Array(81) { AnswerStep.DEEP }))
+
+@Preview(name = "Solved on a dark screen", widthDp = 360, heightDp = 780)
+@Composable private fun PSolvedScreen() = Stage(screen, fake(ScanState.Solved(0), solved = true,
+    steps = Array(81) { AnswerStep.BRIGHT }))
+
+@Preview(name = "Solved, hard shadow on the right", widthDp = 360, heightDp = 780)
+@Composable private fun PSolvedShadow() = Stage(shadow, fake(ScanState.Solved(0), solved = true,
+    steps = Array(81) { if (it % 9 >= 5) AnswerStep.BRIGHT else AnswerStep.DEEP }))
+
+@Preview(name = "Needs review · double", widthDp = 360, heightDp = 780)
+@Composable private fun PReview() = Stage(paper, fake(
+    ScanState.NeedsReview(ScanState.Reason.NO_UNIQUE_SOLUTION), solved = false))
