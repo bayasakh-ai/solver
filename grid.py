@@ -18,11 +18,18 @@ def preprocess(img):
 
 
 def order_corners(pts):
-    """Return corners as top-left, top-right, bottom-right, bottom-left."""
-    s = pts.sum(axis=1)
-    d = np.diff(pts, axis=1).ravel()  # y - x
-    return np.array([pts[np.argmin(s)], pts[np.argmin(d)],
-                     pts[np.argmax(s)], pts[np.argmax(d)]], dtype=np.float32)
+    """Corners clockwise around their centre (TL, TR, BR, BL on screen), starting at
+    the one nearest the top-left (smallest x + y). Ordered by angle so each corner is
+    used once: picking each by its own argmin/argmax chose the same corner twice for a
+    grid at ~45 degrees, and the warp collapsed to a blank image (rotate_steep).
+    Which corner is really 'up' is decided later by the reading (orientation.py).
+    Mirrored by GridDetector.orderCorners -> Orientation.clockwiseFromTopLeft."""
+    pts = np.asarray(pts, dtype=np.float32)
+    c = pts.mean(axis=0)
+    order = sorted(range(4), key=lambda i: np.arctan2(pts[i, 1] - c[1], pts[i, 0] - c[0]))
+    sums = [pts[i, 0] + pts[i, 1] for i in order]
+    start = sums.index(min(sums))
+    return pts[[order[(start + j) % 4] for j in range(4)]]
 
 
 def find_grid(th, min_area_ratio=0.1):

@@ -220,6 +220,7 @@ Tests (status):
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
+  orientation.py       which way is up: turn chosen by the reading  <-> Orientation.kt
   export_background_cases.py  grids + per-cell backgrounds/steps for BackgroundParityTest
   inspect_photo.py     stage-by-stage report + side-by-side image for real photos
   photos/              real test photos + truth files (see Commands)
@@ -237,6 +238,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
                        hysteresis), contrast + colour-vision maths (pure Kotlin)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
+    Orientation.kt     corner order, quarter-turn choice, corner tracking, lock (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
                        Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
     ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
@@ -246,7 +248,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
-                       InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest
+                       InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
+                       OrientationTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
@@ -271,6 +274,14 @@ data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressC
    homography fit -> rough corners -> `refineEdges` snaps each edge to the strongest
    line via projection profiles. Corners ordered TL, TR, BR, BL.
 4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
+4b. **Orientation** (orientation.py / Orientation.kt): corners are ordered clockwise from
+   the one nearest the top-left on screen, which is a quarter turn off past 45 deg. On a
+   new grid (first sharp frame; Python: every photo) the warp is read at all 4 quarter
+   turns; the most confident turn whose reading is a consistent sudoku wins, and the
+   corners are relabelled to match. Live: each later frame keeps every corner on the
+   nearest corner of the last frame (bestRoll), so turning the phone mid-scan is fine;
+   the decision locks once consistent (else after 5 sharp frames). Turn changes reset
+   the vote. Cell backgrounds are measured after this, on the upright warp.
 5. `extractCells`: `binarize` (adaptiveThreshold 21, 10) -> remove user-ink pieces
    (colour, sharp frames only; see "Ignore user ink") -> `cleanCell` -> 28x28 centred
    digit or null (empty).
@@ -303,6 +314,11 @@ data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressC
   frame (last that worked, flip after a miss) to keep the 5 ms budget. Bonus: blurred
   paper grids are found far more often in the inverted image (19/20 vs 9/20), so blur
   went 30% -> 70% once the cells were flipped back.
+- **Up is decided by the reading, not by screen position.** Corner labels from
+  find_grid are only a starting point; confidence alone picks the right quarter turn
+  149/150 with margins down to 0.010 (the model is confidently wrong on sideways
+  digits), so sudoku consistency confirms it. Live frames track corners instead of
+  re-deciding, which keeps the cost to one 4-way reading per grid.
 - **TFLite batch is fixed at 81.** Resizing the input per frame desynced the output
   shape and crashed (`[24, 9]` vs `[23, 9]`). Never call `resizeInput` per frame.
 - **Sharpness is measured inside the warped grid only** — a blank wall scores ~11
@@ -380,6 +396,9 @@ the printed reading. inspect_photo.py reads both.
   the warp is a quarter turn off and digits are read sideways (2-5% right). Not a model
   problem: an orientation problem. Confidence of the model picks the right quarter turn
   in 149/150 samples (0-360 deg, 7 conditions), but margins are thin (>= 0.010).
+  **Fixed** (orientation step + corner order by angle): rotate_steep **100%**, the other
+  12 conditions identical -> 88% over 260; photos 4/4. The last failure was a grid at
+  exactly 45 deg where the old min/max corner tests picked one corner twice (blank warp).
 - Real photos: **4 of 4 solve (100%)** since ignore-user-ink: puzzle1's 56 red-pen
   cells are ignored and its 25 printed digits solve it. Before that (75%), **3 of 4
   solved:** puzzle2, puzzle3 and puzzle4 are blank newspaper puzzles (3 and 4 are two

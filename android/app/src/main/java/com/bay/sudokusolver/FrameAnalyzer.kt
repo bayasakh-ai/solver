@@ -30,6 +30,7 @@ data class FrameResult(
     val inkCells: Int = 0,            // cells where the user's coloured ink was ignored
     val steps: Array<AnswerStep>? = null, // answer colour step per cell (smoothed, hysteresis)
     val stepsMicros: Long = 0,        // time for background medians + steps (budget check)
+    val orientMs: Long = 0,           // last orientation decision (4 readings, once per grid)
 ) {
     val isSharp get() = sharpness > FrameAnalyzer.SHARP_ENOUGH
 }
@@ -58,6 +59,8 @@ class FrameAnalyzer(
     private var lastFoundAt = 0L
     private var ink: GridDetector.InkResult? = null // from the latest frame that was read
     private val answerSteps = AnswerSteps()
+    private val orientationLock = OrientationLock()
+    private var orientMs = 0L // last orientation decision (debug stats)
 
     /** Answer palette from Settings; read on the analysis thread each frame. */
     @Volatile var palette: AnswerPalette = AnswerPalette.DEFAULT
@@ -77,6 +80,51 @@ class FrameAnalyzer(
         solvedFrom = null
         ink = null
         answerSteps.reset()
+        orientationLock.reset()
+    }
+
+    private fun flatten(pts: List<Point>) =
+        FloatArray(8) { i -> (if (i % 2 == 0) pts[i / 2].x else pts[i / 2].y).toFloat() }
+
+    /** [src] turned by k (1-3) quarter turns counterclockwise, like np.rot90(src, k). */
+    private fun turned(src: Mat, k: Int): Mat = Mat().also {
+        Core.rotate(src, it, when (k.mod(4)) {
+            1 -> Core.ROTATE_90_COUNTERCLOCKWISE
+            2 -> Core.ROTATE_180
+            else -> Core.ROTATE_90_CLOCKWISE
+        })
+    }
+
+    /** Same, releasing [src]. */
+    private fun rotateQuarter(src: Mat, k: Int): Mat = turned(src, k).also { src.release() }
+
+    /**
+     * Quarter turn that makes the dark-on-light warp upright, and whether that turn's
+     * reading is a consistent sudoku. Reads all four turns (gray only, no chroma);
+     * runs once per grid (OrientationLock), not every frame.
+     */
+    private fun decideTurn(warped: Mat): Pair<Int, Boolean> {
+        val scores = DoubleArray(4)
+        val consistent = BooleanArray(4)
+        for (k in 0 until 4) {
+            val view = if (k == 0) warped else turned(warped, k)
+            val cells = GridDetector.extractCells(view, null).cells
+            if (view !== warped) view.release()
+            val filled = cells.indices.filter { cells[it] != null }
+            val grid = IntArray(81)
+            val probs = ArrayList<FloatArray>(filled.size)
+            if (filled.isNotEmpty()) {
+                val out = classifier.classify(filled.map { cells[it]!! })
+                filled.forEachIndexed { j, i ->
+                    probs.add(out[j])
+                    grid[i] = out[j].indices.maxBy { out[j][it] } + 1
+                }
+            }
+            scores[k] = Orientation.turnScore(probs)
+            consistent[k] = Orientation.isConsistent(grid)
+        }
+        val k = Orientation.chooseTurn(scores, consistent)
+        return k to consistent[k]
     }
 
     override fun analyze(image: ImageProxy) {
@@ -108,7 +156,12 @@ class FrameAnalyzer(
 
             val result: FrameResult
             if (corners != null) {
-                val (warped, m) = GridDetector.warp(source, corners)
+                // findGrid labels corners by screen position on every frame; keep each one
+                // on the nearest corner of the last frame, so the grid's "up" (decided by
+                // the reading, below) survives turning the phone past 45 degrees
+                var pts = corners.toList()
+                smoothed?.let { prev -> pts = Orientation.roll(pts, Orientation.bestRoll(flatten(pts), prev)) }
+                var (warped, m) = GridDetector.warp(source, pts.toTypedArray())
                 m.release()
                 val pixels = ByteArray(warped.rows() * warped.cols())
                 warped.get(0, 0, pixels)
@@ -117,19 +170,37 @@ class FrameAnalyzer(
                 if (polarity.onFound(searchedInverted, looksDark)) {
                     Core.bitwise_not(warped, warped)
                 }
+                val sharp = sharpness(warped) // Laplacian variance: same either polarity / turn
+                val isSharp = sharp > SHARP_ENOUGH
+                // which way is up: on a new grid, the reading decides (Orientation.kt)
+                if (isSharp && !orientationLock.locked) {
+                    val t0 = System.nanoTime()
+                    val (k, consistent) = decideTurn(warped)
+                    orientationLock.record(consistent)
+                    if (k != 0) {
+                        pts = Orientation.roll(pts, k)
+                        warped = rotateQuarter(warped, k)
+                        smoothed = smoothed?.let { Orientation.roll(it, k) }
+                        // readings so far were in the old orientation: start the vote again
+                        tracker.reset()
+                        solved = null
+                        solvedFrom = null
+                        answerSteps.reset()
+                    }
+                    orientMs = (System.nanoTime() - t0) / 1_000_000
+                }
                 // answer colour step per cell: the grid's default from the vote in camera
                 // polarity (dark screen -> bright), single cells switch only in real shadow.
-                // Backgrounds come from the pre-flip pixels with the inverted search undone.
+                // warped is dark-on-light and upright now: camera = warped XOR screen.
                 // Every frame: answers are redrawn every frame and shadows move with the hand.
                 val stepsStart = System.nanoTime()
                 val screen = looksDark != searchedInverted
-                val backgrounds = CellBackground.medians(pixels, warped.cols(), inverted = searchedInverted)
+                val upright = ByteArray(warped.rows() * warped.cols()).also { warped.get(0, 0, it) }
+                val backgrounds = CellBackground.medians(upright, warped.cols(), inverted = screen)
                 val steps = answerSteps.update(backgrounds, palette, screen)
                 val stepsMicros = (System.nanoTime() - stepsStart) / 1_000
-                val sharp = sharpness(warped) // Laplacian variance: same either polarity
-                val isSharp = sharp > SHARP_ENOUGH
                 // colour only for frames that get read: copying + warping U/V costs time
-                val chroma = if (isSharp) warpChroma(frame, corners) else null
+                val chroma = if (isSharp) warpChroma(frame, pts.toTypedArray()) else null
                 val extracted = GridDetector.extractCells(warped, chroma)
                 chroma?.let { it.first.release(); it.second.release() }
                 val cells = extracted.cells
@@ -143,13 +214,12 @@ class FrameAnalyzer(
                 }
                 val state = updateSolution(isSharp)
 
-                val flat = FloatArray(8) { i -> (if (i % 2 == 0) corners[i / 2].x else corners[i / 2].y).toFloat() }
-                smoothed = smooth(flat, smoothed, gray.cols())
+                smoothed = smooth(flatten(pts), smoothed, gray.cols())
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, state,
                     s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0,
-                    steps, stepsMicros)
+                    steps, stepsMicros, orientMs)
                 lastFound = result
                 lastFoundAt = now
             } else if (lastFound != null && now - lastFoundAt < HOLD_NANOS) {

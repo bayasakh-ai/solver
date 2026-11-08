@@ -126,8 +126,8 @@ fun barContent(
 fun statsText(r: FrameResult?): String = when {
     r == null -> "Starting camera…"
     r.corners == null -> "No grid · %.0f fps · %d ms".format(r.fps, r.processMs)
-    else -> "%d digits · sharpness %.0f · %.0f fps · %d ms · steps %d µs%s".format(
-        r.digits, r.sharpness, r.fps, r.processMs, r.stepsMicros,
+    else -> "%d digits · sharpness %.0f · %.0f fps · %d ms · steps %d µs · orient %d ms%s".format(
+        r.digits, r.sharpness, r.fps, r.processMs, r.stepsMicros, r.orientMs,
         if (r.inkCells > 0) " · ink ignored in ${r.inkCells}" else "")
 }
 

@@ -45,12 +45,10 @@ object GridDetector {
         return th
     }
 
+    /** Clockwise from the corner nearest the top-left; see Orientation.clockwiseFromTopLeft. */
     fun orderCorners(pts: Array<Point>): Array<Point> {
-        val tl = pts.minBy { it.x + it.y }
-        val br = pts.maxBy { it.x + it.y }
-        val tr = pts.minBy { it.y - it.x }
-        val bl = pts.maxBy { it.y - it.x }
-        return arrayOf(tl, tr, br, bl)
+        val idx = Orientation.clockwiseFromTopLeft(DoubleArray(4) { pts[it].x }, DoubleArray(4) { pts[it].y })
+        return Array(4) { pts[idx[it]] }
     }
 
     // ---------- finding the grid ----------

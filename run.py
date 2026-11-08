@@ -8,6 +8,7 @@ import numpy as np
 
 from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
+from orientation import is_consistent, turn_score, choose_turn, roll_corners
 
 
 def read_digits(cells, model):
@@ -103,21 +104,41 @@ def process(img, model):
     return first  # neither worked: report the more likely polarity
 
 
+def orient(warped, model):
+    """Quarter turns (np.rot90) that make the dark-on-light warp upright: read each
+    turn without the chroma step, pick by confidence checked by sudoku logic."""
+    scores, consistent = [], []
+    for k in range(4):
+        cells, _ = extract_cells(np.ascontiguousarray(np.rot90(warped, k)), None)
+        read, probs = read_digits(cells, model)
+        scores.append(turn_score(probs))
+        consistent.append(is_consistent(read))
+    return choose_turn(scores, consistent)
+
+
 def _process_once(img, model, searched_inverted=False):
     gray, th = preprocess(img)
     corners = find_grid(th)
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
-    # background behind each cell in CAMERA polarity, for the answer colour step
-    # (measured before the dark-mode flip; undo the inverted search). Not used for reading.
-    backgrounds = cell_backgrounds(warped)
-    if searched_inverted:
-        backgrounds = [255 - v for v in backgrounds]
-    dark = looks_dark(warped)
+    dark = looks_dark(warped)  # a quarter turn doesn't change the per-cell vote
     if dark:  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
     screen = dark != searched_inverted  # dark page in the CAMERA's view: answers default bright
+    # which way is up: the reading decides (orientation.py); relabel the corners to match
+    k = orient(warped, model)
+    if k:
+        corners = roll_corners(corners, k)
+        warped = np.ascontiguousarray(np.rot90(warped, k))
+        M = cv2.getPerspectiveTransform(corners, np.float32(
+            [[0, 0], [WARP_SIZE - 1, 0], [WARP_SIZE - 1, WARP_SIZE - 1], [0, WARP_SIZE - 1]]))
+    # background behind each cell in CAMERA polarity, for the answer colour step.
+    # warped is dark-on-light now: camera = warped XOR screen. Median first, then map,
+    # exactly like CellBackground.medians(pixels, inverted = screen). Not used for reading.
+    backgrounds = cell_backgrounds(warped)
+    if screen:
+        backgrounds = [255 - v for v in backgrounds]
     # user ink (coloured pen) is removed before reading: solve from printed digits only
     cells, ink = extract_cells(warped, chroma_planes(img, corners))
     read, probs = read_digits(cells, model)

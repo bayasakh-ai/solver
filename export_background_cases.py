@@ -14,6 +14,9 @@ grids for the median rule (even split -> lower value) and for luma values either
 side of each palette's switch points (paper: Ink blue Y 109/110, High contrast 91/92;
 screen: Ink blue 161/162, High contrast 140/141). The two edge grids get opposite
 dark-mode votes, so both defaults (paper and screen) are covered.
+The app measures the upright, dark-on-light warp with inverted = screen; these
+fixtures check the same function on grids as found (inverted = searched_inverted),
+which covers both polarities of the median and the mapping.
 Re-run after changing cell_backgrounds / answer_ink.py, then run the JVM tests."""
 import os
 import random
