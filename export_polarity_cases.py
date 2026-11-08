@@ -8,7 +8,7 @@ inverts it itself, which halves the fixture size (~120 KB per noisy photo grid).
 Cases:
 - synthetic photos for the conditions with distinct pixel statistics, warped the
   way the app sees them; `_searched_inv` = grid only found in the inverted image;
-- real photos (puzzle2/3.jpg if present);
+- real photos (photos/puzzle2.jpg, photos/puzzle3.jpg if present);
 - edge cases for the percentile/threshold rules: cells whose spread is exactly
   19/20/21 (the MIN_SPREAD cut-off), exact ties (below == above, which count as
   dark on both sides), and coarse noise (9 grey levels, so it compresses but
@@ -90,7 +90,7 @@ def main():
                 break
 
     for name in ("puzzle2", "puzzle3"):
-        img = cv2.imread(f"{name}.jpg", cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(os.path.join("photos", f"{name}.jpg"), cv2.IMREAD_GRAYSCALE)
         w, inv = warped_from(img) if img is not None else (None, None)
         if w is not None:
             cases.append((f"real_{name}" + ("_searched_inv" if inv else ""), w))

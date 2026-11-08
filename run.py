@@ -112,7 +112,8 @@ def _process_once(img, model):
     if looks_dark(warped):  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
     read, probs = read_digits(extract_cells(warped), model)
-    result = {"read": read, "M": M}
+    # corners/warped/probs are only for inspect_photo.py: it shows what was really read
+    result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

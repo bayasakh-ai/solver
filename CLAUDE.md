@@ -112,11 +112,59 @@ Screens designed in Claude Design (now inside Claude as artifacts), implemented 
 
 1. **Now:** real-world test session (see Current status), then fix what it reveals.
 2. **v1:** scan → auto-capture → check/tap-to-fix → solution / play with progressive,
-   animated hints. Live AR mode kept.
+   animated hints. Live AR mode kept. **Ignore coloured/grey user ink** so a puzzle
+   someone has started still scans (see "Ignore user ink" below).
 3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
    puzzle library, daily puzzle, difficulty rating.
 4. **v1.2:** monetization.
 5. **Later:** iOS (see iOS plan).
+
+### Ignore user ink (v1, planned — not built)
+
+Goal: a started puzzle (pen or pencil entries, pencil notes) scans as if blank. Solve
+from printed digits only. This is the v1 subset of the handwriting work: no reading
+of the user's digits yet. Black pen is out of scope (looks like print by colour and
+darkness; needs the v1.1 shape model).
+
+Measured on photos/puzzle1.jpg, simulating the phone (640 px frame, chroma at half
+resolution like YUV_420_888), per non-empty cell:
+
+| | printed (25) | red pen (56) |
+|---|---|---|
+| ink chroma, sqrt(Cr'^2+Cb'^2) | 2-3 | 50-62 |
+| ink darkness vs local paper, (paperY-inkY)/paperY | 0.70-0.88 | 0.32-0.42 |
+
+One photo, one pen, good light: these thresholds are starting points, not settled.
+
+Design:
+- Classify each **connected ink piece**, not each cell. That handles strokes spilling
+  into a printed cell (puzzle1 r2c7) and pencil notes in corners.
+- User ink = chroma distance from the *local paper colour* > ~20 (colour casts shift
+  paper and ink together), or darkness vs local paper < ~0.55 (pencil).
+- Remove user pieces from the binarized cell before `clean_cell`. Training data has
+  no colour and `binarize` is unchanged, so the "binarize identically" rule holds
+  and no retraining is needed.
+- Pieces between the thresholds -> mark the cell low-confidence on the Check screen
+  (the user confirms). Never guess.
+- Safety net: if fewer than 17 printed cells would remain (e.g. a magazine printing
+  its digits in colour), skip the step for that grid.
+- Thresholds/decision in pure Kotlin (e.g. `InkClassifier.kt`: piece stats ->
+  printed / user / unsure); stats in `grid.py` / `GridDetector.kt`. `FrameAnalyzer`
+  must start reading the U/V planes (today only Y), warping them only on sharp
+  frames that get read.
+
+Tests:
+1. Acceptance: `evaluate.py photos/` 75% -> 100%. puzzle1.txt holds only printed
+   digits, so it passes only if all 56 pen cells are ignored and all 25 printed kept.
+2. `inspect_photo.py`: add an ignored-ink mask panel and printed-kept / pen-ignored
+   counts with margins.
+3. `synth.py`: colour output plus `pen_marks` and `pencil` conditions.
+4. Main risk: faint printed digits (shadow/glare/low_res/blur) dropped as "pencil".
+   Run `--synth 20` before and after; no condition may drop.
+5. Kotlin: JVM test for `InkClassifier` on piece stats exported from puzzle1 (same
+   idea as PolarityParityTest).
+6. Real-world session: red pen, blue pen, pencil, pencil corner notes, black pen
+   (expected to fail in v1).
 
 ---
 
@@ -135,6 +183,8 @@ Screens designed in Claude Design (now inside Claude as artifacts), implemented 
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
+  inspect_photo.py     stage-by-stage report + side-by-side image for real photos
+  photos/              real test photos + truth files (see Commands)
   model.tflite         current model (also copied into android/app/src/main/assets/)
 android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/java/com/bay/sudokusolver/
@@ -220,6 +270,7 @@ python diagnose.py [--prune 0.05]
 python evaluate.py --synth 20             # synthetic stress test
 python evaluate.py photos/                # real photos with .txt truths
 python run.py photo.jpg                   # single photo -> photo_solved.jpg
+python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x_inspect.png
 python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
 ```
@@ -236,7 +287,9 @@ Android (from `android/`): `./gradlew testDebugUnitTest` (JVM tests),
 
 Truth file format (same as run.py prints): 9 lines like `. . 5 . 3 1 . 4 .`.
 Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
-For handwriting later, extend the truth format to mark user entries separately.
+Handwritten entries go in a second file, `<name>.user.txt` (same format, `.` for printed
+and empty cells); `<name>.txt` stays printed digits only, so evaluate.py still judges
+the printed reading. inspect_photo.py reads both.
 
 ## Working rules
 
@@ -263,18 +316,18 @@ For handwriting later, extend the truth format to mark user entries separately.
 - Synthetic (Windows, seed 0, after per-cell dark-mode vote): 95% total. clean/rotate/
   glare/jpeg/dark_mode/touching_lines 100%, tilt 95%, shadow 95%, low_res 90%,
   **blur 70%** (6 no_grid). Before the vote on the same machine: 91%, blur 30%.
-- Real photos (in git: puzzle1-3.jpg, no .txt truths yet): **2 of 3 solve.**
-  puzzle2 and puzzle3 are blank newspaper puzzles and solve (puzzle2 with one
-  self-correction). puzzle1 is a *completed* puzzle — 25 printed digits + 56 in red
-  pen — and is unsolvable today. Stage by stage (checked 2026-11-08 against a hand
+- Real photos (`photos/puzzle1-4.jpg` with truths; `evaluate.py photos/` = 75%): **3 of 4
+  solve.** puzzle2, puzzle3 and puzzle4 are blank newspaper puzzles (3 and 4 are two
+  shots of the same puzzle) and all solve, puzzle2 with one self-correction. These
+  are the three behind the earlier "3/3". puzzle1 is a *completed* puzzle — 25
+  printed digits + 56 in red pen — and is unsolvable today. Stage by stage (checked 2026-11-08 against a hand
   transcription): grid, warp and polarity correct; printed digits 25/25 at confidence
   1.00; pen digits 36/56 right, 19 misread, 1 missed (the r2c7 "7" crosses into the
   next cell). That's 20 errors; self_correct allows 2. The model has only ever seen
   printed fonts, and it is confidently wrong on pen (3 misreads at 100%: 1->7, 4->9).
   Reading only the printed cells solves it and matches the pen answers. So puzzle1
-  is the first handwriting (v1.1) test case, not a scanner bug. (An older "3/3"
-  claim likely counted a puzzle4.jpg that isn't in the repo; only an ignored
-  puzzle4_solved.jpg output exists.)
+  is not a scanner bug: it is the acceptance test for "Ignore user ink" (v1) and the
+  first handwriting (v1.1) test case.
 - Android: 30 fps, ~5 ms grid finding, answers appear in ~1-2 s, self-correction fixes
   misreads live. Tested mostly on a computer screen so far.
 - Next real-world test session: paper, bad light/shadow/glare, steep angles, small
