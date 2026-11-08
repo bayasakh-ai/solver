@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from run import process, show
+from answer_ink import step_for, DEEP, BRIGHT
 
 OUTCOMES = ["solved", "wrong_answer", "unsolvable", "too_few_digits", "no_grid"]
 
@@ -65,6 +66,37 @@ def report(results):
         print(f"\n{len(fixed)} solved puzzles had misreads that self-correction fixed")
 
 
+def step_counts(res, truth_puzzle):
+    """(deep, bright) answer steps over the truth's empty cells, single frame, or None."""
+    bg = res.get("backgrounds")
+    if bg is None:
+        return None
+    steps = [step_for(bg[r * 9 + c]) for r in range(9) for c in range(9) if truth_puzzle[r][c] == 0]
+    return steps.count(DEEP), steps.count(BRIGHT)
+
+
+def report_steps(steps):
+    """Which answer step empty cells get (Ink blue, one frame, no hysteresis).
+    Expected: BRIGHT for dark_mode (a dark screen), DEEP for everything on paper.
+    'mixed' = grids whose empty cells don't all get the same step (e.g. a hard
+    shadow across paper). Reported, not judged: the rule is per cell on purpose."""
+    width = max(len(k) for k in steps) + 2
+    print("\nanswer steps (empty cells, Ink blue, single frame)")
+    print(f"{'condition':<{width}} {'grids':>5} {'cells':>6} {'deep':>6} {'bright':>7} {'mixed':>6} {'unexpected':>11}")
+    for cond, rows in steps.items():
+        rows = [r for r in rows if r is not None]
+        if not rows:
+            continue
+        deep = sum(d for d, _ in rows)
+        bright = sum(b for _, b in rows)
+        cells = deep + bright
+        mixed = sum(1 for d, b in rows if d and b)
+        expect_bright = cond.startswith("dark_mode")
+        unexpected = bright if not expect_bright else deep
+        print(f"{cond:<{width}} {len(rows):>5} {cells:>6} {deep / cells:>6.0%} {bright / cells:>7.0%}"
+              f" {mixed:>3}/{len(rows):<2} {unexpected / cells:>10.1%}")
+
+
 def save_failure(img, name, status, res, truth):
     os.makedirs("eval_failures", exist_ok=True)
     cv2.imwrite(f"eval_failures/{name}_{status}.jpg", img)
@@ -80,6 +112,7 @@ def run_synth(model, per_condition, seed):
     random.seed(seed); np.random.seed(seed)
     fonts = load_fonts()
     results = defaultdict(list)
+    steps = defaultdict(list)
     for cond in CONDITIONS:
         for i in range(per_condition):
             img, puzzle, solution = make_sample(cond, fonts)
@@ -87,14 +120,16 @@ def run_synth(model, per_condition, seed):
             res = process(img, model)
             status, misreads = judge(res, puzzle, solution)
             results[cond].append((status, misreads, time.time() - t))
+            steps[cond].append(step_counts(res, puzzle))
             if status != "solved":
                 save_failure(img, f"{cond}_{i:02d}", status, res, puzzle)
         print(f"  {cond} done")
-    return results
+    return results, steps
 
 
 def run_real(model, folder):
     results = defaultdict(list)
+    steps = defaultdict(list)
     images = sorted(f for ext in ("jpg", "jpeg", "png")
                     for f in glob.glob(os.path.join(folder, f"*.{ext}"))
                     if not f.endswith("_solved.jpg"))
@@ -110,9 +145,10 @@ def run_real(model, folder):
         name = os.path.splitext(os.path.basename(path))[0]
         group = re.sub(r"[_-]?\d+$", "", name) or name
         results[group].append((status, misreads, 0))
+        steps[group].append(step_counts(res, truth))
         if status != "solved":
             save_failure(img, name, status, res, truth)
-    return results
+    return results, steps
 
 
 def main():
@@ -127,11 +163,12 @@ def main():
     import tensorflow as tf
     model = tf.keras.models.load_model("digits.keras")
     shutil.rmtree("eval_failures", ignore_errors=True)
-    results = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder)
+    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder)
     if not results:
         print("nothing to evaluate")
         return
     report(results)
+    report_steps(steps)
     if os.path.isdir("eval_failures"):
         print("failures saved in eval_failures/")
 

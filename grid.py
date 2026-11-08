@@ -197,6 +197,23 @@ def cell_votes(warped, margin=5, min_spread=20):
     return light, dark
 
 
+def cell_backgrounds(warped, margin=5):
+    """Median luma of each cell's interior (same interior as cell_votes), 81 ints,
+    row-major. Empty cells -> the paper/screen behind the answer digit, which picks
+    its colour step (answer_ink.step_for). Digits are a minority of a cell's pixels,
+    so the median ignores them. Pass the warp in camera polarity.
+    Mirrored by CellBackground.medians in AnswerInk.kt; export_background_cases.py +
+    BackgroundParityTest check they agree exactly."""
+    step = warped.shape[0] // 9
+    out = []
+    for r in range(9):
+        for c in range(9):
+            cell = warped[r * step + margin:(r + 1) * step - margin,
+                          c * step + margin:(c + 1) * step - margin]
+            out.append(int(np.percentile(cell, 50, method="lower")))
+    return out
+
+
 def clean_cell(cell, out=DIGIT_SIZE):
     """Binary cell (white ink on black) -> centered out x out digit, or None if empty.
     The SAME function is used when generating training data, so inputs match."""

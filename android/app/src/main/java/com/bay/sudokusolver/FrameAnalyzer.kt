@@ -28,6 +28,8 @@ data class FrameResult(
     val solution: IntArray? = null,
     val unsure: BooleanArray? = null, // cells with ink that may be the user's: ask on Check
     val inkCells: Int = 0,            // cells where the user's coloured ink was ignored
+    val steps: Array<AnswerStep>? = null, // answer colour step per cell (smoothed, hysteresis)
+    val stepsMicros: Long = 0,        // time for background medians + steps (budget check)
 ) {
     val isSharp get() = sharpness > FrameAnalyzer.SHARP_ENOUGH
 }
@@ -55,6 +57,10 @@ class FrameAnalyzer(
     private var lastFound: FrameResult? = null
     private var lastFoundAt = 0L
     private var ink: GridDetector.InkResult? = null // from the latest frame that was read
+    private val answerSteps = AnswerSteps()
+
+    /** Answer palette from Settings; read on the analysis thread each frame. */
+    @Volatile var palette: AnswerPalette = AnswerPalette.DEFAULT
 
     override fun analyze(image: ImageProxy) {
         image.use { frame ->
@@ -85,6 +91,13 @@ class FrameAnalyzer(
                 m.release()
                 val pixels = ByteArray(warped.rows() * warped.cols())
                 warped.get(0, 0, pixels)
+                // background behind each cell, in camera polarity (pixels are pre-flip;
+                // undo an inverted search) -> answer colour step. Every frame: answers are
+                // redrawn every frame and shadows move with the hand.
+                val stepsStart = System.nanoTime()
+                val backgrounds = CellBackground.medians(pixels, warped.cols(), inverted = searchedInverted)
+                val steps = answerSteps.update(backgrounds, palette)
+                val stepsMicros = (System.nanoTime() - stepsStart) / 1_000
                 // the cells decide: digits must be dark-on-light for binarize + the model
                 if (polarity.onFound(searchedInverted, Polarity.looksDark(pixels, warped.cols()))) {
                     Core.bitwise_not(warped, warped)
@@ -111,7 +124,8 @@ class FrameAnalyzer(
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, state,
-                    s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0)
+                    s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0,
+                    steps, stepsMicros)
                 lastFound = result
                 lastFoundAt = now
             } else if (lastFound != null && now - lastFoundAt < HOLD_NANOS) {
@@ -125,6 +139,7 @@ class FrameAnalyzer(
                 solved = null
                 solvedFrom = null
                 ink = null
+                answerSteps.reset()
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
                     (now - start) / 1_000_000, fps, ScanState.Searching)
             }

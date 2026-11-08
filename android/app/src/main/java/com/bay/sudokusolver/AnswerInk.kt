@@ -3,6 +3,7 @@ package com.bay.sudokusolver
 import kotlin.math.cbrt
 import kotlin.math.hypot
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /*
@@ -89,6 +90,99 @@ object SignalColors {
 
     val onPaper = listOf(WARNING_PAPER, HINT_STROKE_PAPER, UNSURE_RING)
     val onDark = listOf(WARNING_CAMERA, AMBER_CAMERA, HINT_STROKE_DARK)
+}
+
+/**
+ * Background behind each cell: the median luma of the cell's interior on the
+ * flattened 450x450 grid, in CAMERA polarity (what the user sees, not the
+ * dark-on-light version the reader works on). Mirrors grid.cell_backgrounds;
+ * export_background_cases.py + BackgroundParityTest check they agree exactly.
+ *
+ * Median, not mean: printed digits and grid-line bleed are a minority of an
+ * empty cell's pixels, so the median is the paper (or screen) itself.
+ */
+object CellBackground {
+    const val MARGIN = 5 // same cell interior as Polarity.cellVotes / grid.cell_votes
+
+    /**
+     * [pixels] = flattened grid row-major, [size] x [size]. [inverted] = these pixels
+     * are 255 - camera (the grid was found in the inverted image, or flipped for
+     * dark mode); the result is mapped back to camera values.
+     */
+    fun medians(pixels: ByteArray, size: Int, inverted: Boolean): IntArray {
+        val step = size / 9
+        val hist = IntArray(256)
+        return IntArray(81) { i ->
+            val r = i / 9
+            val c = i % 9
+            hist.fill(0)
+            var n = 0
+            for (y in r * step + MARGIN until (r + 1) * step - MARGIN) {
+                val row = y * size
+                for (x in c * step + MARGIN until (c + 1) * step - MARGIN) {
+                    hist[pixels[row + x].toInt() and 0xFF]++
+                    n++
+                }
+            }
+            // numpy percentile 50, method="lower": sorted[(n - 1) / 2]
+            val target = (n - 1) / 2
+            var seen = 0
+            var v = 0
+            while (true) {
+                seen += hist[v]
+                if (seen > target) break
+                v++
+            }
+            if (inverted) 255 - v else v
+        }
+    }
+}
+
+/**
+ * Per-cell answer step for the live overlay, stable from frame to frame:
+ *  - each cell's background is smoothed (exponential average, [SMOOTHING] of the
+ *    new frame), so sensor noise and auto-exposure steps don't jump it;
+ *  - a cell only changes step when the other step's contrast beats the current
+ *    one by [HYSTERESIS] (15%), so a cell sitting at the switch point (~Y 134)
+ *    doesn't flicker between deep and bright.
+ * Analysis thread only. [reset] when the grid is lost.
+ */
+class AnswerSteps {
+    private var smoothed: FloatArray? = null
+    private var steps: Array<AnswerStep>? = null
+    private var lastPalette: AnswerPalette? = null
+
+    fun reset() {
+        smoothed = null
+        steps = null
+        lastPalette = null
+    }
+
+    fun update(backgrounds: IntArray, palette: AnswerPalette): Array<AnswerStep> {
+        require(backgrounds.size == 81)
+        val s = smoothed?.also { prev ->
+            for (i in 0 until 81) prev[i] += SMOOTHING * (backgrounds[i] - prev[i])
+        } ?: FloatArray(81) { backgrounds[it].toFloat() }
+        smoothed = s
+
+        val prev = steps.takeIf { palette == lastPalette }
+        lastPalette = palette
+        val next = Array(81) { i ->
+            val bg = ColorMath.luminanceFromLuma(s[i].roundToInt())
+            val current = prev?.get(i) ?: return@Array palette.stepFor(bg)
+            val other = if (current == AnswerStep.DEEP) AnswerStep.BRIGHT else AnswerStep.DEEP
+            val cCur = ColorMath.contrast(ColorMath.luminance(palette.color(current)), bg)
+            val cOther = ColorMath.contrast(ColorMath.luminance(palette.color(other)), bg)
+            if (cOther >= cCur * HYSTERESIS) other else current
+        }
+        steps = next
+        return next
+    }
+
+    companion object {
+        const val SMOOTHING = 0.3f
+        const val HYSTERESIS = 1.15
+    }
 }
 
 enum class ColorVision { NORMAL, PROTAN, DEUTAN, TRITAN }

@@ -6,7 +6,7 @@ import sys
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, WARP_SIZE
+from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
 
 
@@ -94,7 +94,7 @@ def process(img, model):
     attempts = [img, inverted] if np.median(img) >= 110 else [inverted, img]
     first = None
     for i, attempt in enumerate(attempts):
-        res = _process_once(attempt, model)
+        res = _process_once(attempt, model, searched_inverted=attempt is inverted)
         res["inverted"] = attempt is inverted
         if res["status"] == "solved":
             return res
@@ -103,12 +103,17 @@ def process(img, model):
     return first  # neither worked: report the more likely polarity
 
 
-def _process_once(img, model):
+def _process_once(img, model, searched_inverted=False):
     gray, th = preprocess(img)
     corners = find_grid(th)
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
+    # background behind each cell in CAMERA polarity, for the answer colour step
+    # (measured before the dark-mode flip; undo the inverted search). Not used for reading.
+    backgrounds = cell_backgrounds(warped)
+    if searched_inverted:
+        backgrounds = [255 - v for v in backgrounds]
     if looks_dark(warped):  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
     # user ink (coloured pen) is removed before reading: solve from printed digits only
@@ -116,7 +121,7 @@ def _process_once(img, model):
     read, probs = read_digits(cells, model)
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
-              "ink": ink}
+              "ink": ink, "backgrounds": backgrounds}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

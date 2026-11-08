@@ -211,6 +211,8 @@ Tests (status):
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
+  answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
+  export_background_cases.py  grids + per-cell backgrounds/steps for BackgroundParityTest
   inspect_photo.py     stage-by-stage report + side-by-side image for real photos
   photos/              real test photos + truth files (see Commands)
   model.tflite         current model (also copied into android/app/src/main/assets/)
@@ -224,14 +226,17 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
     Solver.kt          Kotlin port of solver.py
-    AnswerInk.kt       answer palettes, step choice, contrast + colour-vision maths (pure Kotlin)
+    AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
+                       hysteresis), contrast + colour-vision maths (pure Kotlin)
+    ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
                        Theme (SudokuLensTheme, CameraChrome, AnswerDigit), ThemePreview
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
-                       InkClassifierTest, AnswerInkTest (plain JVM, no phone; resources/polarity/ and
-                       resources/ink/ from export_polarity_cases.py / export_ink_cases.py)
+                       InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest
+                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
+                       from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
 ```
 
@@ -310,6 +315,7 @@ python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x
 python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
 python export_ink_cases.py                # after changing ink.py / piece stats in grid.py
+python export_background_cases.py         # after changing cell_backgrounds / answer_ink.py
 ```
 
 After retraining, ALWAYS update the app:

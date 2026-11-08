@@ -101,6 +101,70 @@ class AnswerInkTest {
         assertEquals(AnswerStep.BRIGHT, p.stepFor(ColorMath.luminanceFromLuma(80)))
     }
 
+    private fun flat(y: Int) = IntArray(81) { y }
+
+    @Test
+    fun hysteresisHoldsInsideTheDeadBand() {
+        // Ink blue: plain switch at Y 134; with 15% hysteresis DEEP -> BRIGHT at Y <= 128,
+        // BRIGHT -> DEEP at Y >= 140 (computed in answer_ink.py, same formulas).
+        val steps = AnswerSteps()
+        val p = AnswerPalette.INK_BLUE
+        assertEquals(AnswerStep.DEEP, steps.update(flat(200), p)[0])
+        // drift down slowly (smoothing converges) and stop inside the band: stays DEEP
+        repeat(30) { steps.update(flat(130), p) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(130), p)[0])
+        repeat(30) { steps.update(flat(128), p) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(128), p)[0])
+        // back up into the band: stays BRIGHT until Y 140
+        repeat(30) { steps.update(flat(139), p) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(139), p)[0])
+        repeat(30) { steps.update(flat(140), p) }
+        assertEquals(AnswerStep.DEEP, steps.update(flat(140), p)[0])
+    }
+
+    @Test
+    fun smoothingIgnoresAOneFrameSpike() {
+        val steps = AnswerSteps()
+        val p = AnswerPalette.INK_BLUE
+        steps.update(flat(200), p)
+        // one frame of a dark flash (exposure step, hand shadow): 0.3 * (40 - 200) -> Y 152
+        assertEquals(AnswerStep.DEEP, steps.update(flat(40), p)[0])
+    }
+
+    @Test
+    fun cellsChooseIndependentlyAndResetStartsFresh() {
+        val steps = AnswerSteps()
+        val p = AnswerPalette.INK_BLUE
+        val half = IntArray(81) { if (it % 9 < 4) 220 else 60 } // shadow over the right side
+        val s = steps.update(half, p)
+        assertEquals(AnswerStep.DEEP, s[0])
+        assertEquals(AnswerStep.BRIGHT, s[8])
+        steps.reset()
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(30), p)[0]) // no lag from the old grid
+    }
+
+    @Test
+    fun paletteChangeRechoosesWithoutHysteresis() {
+        val steps = AnswerSteps()
+        repeat(30) { steps.update(flat(125), AnswerPalette.INK_BLUE) }
+        assertEquals(AnswerStep.BRIGHT, steps.update(flat(125), AnswerPalette.INK_BLUE)[0])
+        // High contrast's switch is at Y 115, so Y 125 is DEEP for it straight away
+        assertEquals(AnswerStep.DEEP, steps.update(flat(125), AnswerPalette.HIGH_CONTRAST)[0])
+    }
+
+    @Test
+    fun cellMedianUsesInteriorAndCameraPolarity() {
+        val size = 450
+        val px = ByteArray(size * size) { 200.toByte() }
+        // cell 0: grid line on its border (outside the 5 px margin) + a digit covering 30%
+        for (y in 0 until 50) for (x in 0 until 3) px[y * size + x] = 0
+        for (y in 10 until 30) for (x in 10 until 40) px[y * size + x] = 20
+        val m = CellBackground.medians(px, size, inverted = false)
+        assertEquals(200, m[0])
+        assertEquals(200, m[80])
+        assertEquals(55, CellBackground.medians(px, size, inverted = true)[0])
+    }
+
     @Test
     fun haloContrastsWithItsStep() {
         for (p in AnswerPalette.entries) for (s in AnswerStep.entries) {
