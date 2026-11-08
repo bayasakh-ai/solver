@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import com.bay.sudokusolver.ui.theme.SudokuLensTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
         if (!hasCameraPermission) requestPermission.launch(Manifest.permission.CAMERA)
 
         setContent {
-            MaterialTheme {
+            SudokuLensTheme {
                 if (hasCameraPermission) {
                     Box(Modifier.fillMaxSize()) {
                         AndroidView(

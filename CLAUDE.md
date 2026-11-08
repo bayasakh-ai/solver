@@ -27,7 +27,9 @@ library or monetization pull focus from the scanner.
    happens on a digital board on the phone, so the app always knows the user's progress.
 
 Live AR solving (answers drawn on the camera view) stays as a quick
-"just show me the answer" mode.
+"just show me the answer" mode: **answers only, no hints**. Hints live on the digital
+board. (The design files storyboard hints over a frozen camera frame; reuse their look
+and animations, but on the board.)
 
 ### Hints
 Hints follow real solving techniques; the explanation and animation come from the
@@ -92,19 +94,34 @@ levels, daily puzzle, pencil notes, undo, timer, streaks.
   consent screen for EU users (camera app + ads = extra scrutiny).
 
 ### Design direction
-Screens designed in Claude Design (now inside Claude as artifacts), implemented in Compose.
-- Portrait, one-handed; controls in a bottom bar; keep the screen centre clear for the
-  puzzle. Material 3.
-- **Answer digits:** one fixed hue; lightness adapts per cell to the background (deep on
-  paper, bright on dark screens — measured from the empty cells of the warped grid) plus
-  a thin contrasting halo for shadows/glare. Answers also differ from printed digits by
-  font weight/style, not only by color.
-- **Colorblind-safe by default — never color as the only signal.** Grid outline: solid
-  when ready, dashed while reading. Low-confidence / wrong cells: ring or dot marker.
-  Default palette: blue answers, orange warnings. Settings: palette choice (default,
-  high contrast, alternatives for different color vision types).
+Screens designed in Claude Design (files in `design/`, see `design/README.md`),
+implemented in Compose. Design files decide how screens look; this file decides flow,
+architecture and rules.
+- Portrait, one-handed; keep the screen centre clear for the puzzle. Camera controls:
+  the **docked bottom bar** (v2 option "a"). **Material 3 components restyled to the
+  Classical design system**: Cormorant Garamond headings over Lora body, no bold
+  (semibold at most), outlined primary buttons (never filled), 4 dp corners, amber as
+  strokes not fills. Theme: `ui/theme/` (`SudokuLensTheme`, `CameraChrome` for the dark
+  chrome over the camera, `SudokuTheme.colors` for non-Material colours).
+- **Answer digits:** one fixed hue in **two fixed steps**: deep on paper with a light
+  halo, bright on dark screens with a dark halo. The step is picked per cell from the
+  background behind it (`AnswerPalette.stepFor`: the step with the higher contrast;
+  switch near luminance 0.24 = camera Y ~134 after linearising). Answers are semibold
+  serif, so they also differ from printed digits by weight and shape.
+- **Colorblind-safe by default — never color as the only signal.** Grid outline: dashed
+  while reading, dotted on hold steady, solid when solved, double when it needs review.
+  Unsure cells: ring; corrected cells: underline. **Warnings are coral, always paired
+  with a shape**; amber is the brand accent (buttons, reading outline, hint strokes).
+- **Palettes (measured, `AnswerInkTest`):** *Ink blue* (default) and *High contrast*.
+  Ink blue stays distinct from print and all warning colours under protan, deutan and
+  tritan simulation, so no per-colour-vision palettes are needed. Green, Magenta and
+  Gold were rejected by the same test. Any new palette must pass it.
 - Hint explanations in a bottom sheet so the puzzle stays visible.
 - Settings toggle for the debug thumbnail of the flattened grid.
+- **Still needs design:** the Check screen (after every capture, not only on failure),
+  the Choose screen (Show solution / Play with hints / Solve it myself) and the digital
+  play board with hints. The design's "Can't solve" grid and digit picker and its hint
+  sheet are the starting point for these.
 
 ---
 
@@ -207,8 +224,13 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
     Solver.kt          Kotlin port of solver.py
+    AnswerInk.kt       answer palettes, step choice, contrast + colour-vision maths (pure Kotlin)
+    ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
+                       Theme (SudokuLensTheme, CameraChrome, AnswerDigit), ThemePreview
+  app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
+                       (OFL; Lora reserves its name, so no static cuts). Licences in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
-                       InkClassifierTest (plain JVM, no phone; resources/polarity/ and
+                       InkClassifierTest, AnswerInkTest (plain JVM, no phone; resources/polarity/ and
                        resources/ink/ from export_polarity_cases.py / export_ink_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
 ```
