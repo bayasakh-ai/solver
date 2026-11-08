@@ -8,6 +8,7 @@ import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfDouble
+import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
@@ -25,14 +26,17 @@ data class FrameResult(
     val message: String,           // what the user should know right now
     val puzzle: IntArray? = null,  // givens used for solving (after any fixes)
     val solution: IntArray? = null,
+    val unsure: BooleanArray? = null, // cells with ink that may be the user's: ask on Check
+    val inkCells: Int = 0,            // cells where the user's coloured ink was ignored
 ) {
     val isSharp get() = sharpness > FrameAnalyzer.SHARP_ENOUGH
 }
 
 /**
  * Live pipeline: camera frame -> upright grayscale -> find grid -> flatten ->
- * read digits (sharp frames only) -> vote across frames -> self-correct + solve once
- * -> report the solution so the overlay can draw it on every frame.
+ * read digits (sharp frames only; the user's coloured ink is removed first, using the
+ * U/V planes) -> vote across frames -> self-correct + solve once -> report the solution
+ * so the overlay can draw it on every frame.
  */
 class FrameAnalyzer(
     private val classifier: DigitClassifier,
@@ -50,6 +54,7 @@ class FrameAnalyzer(
     private var smoothed: FloatArray? = null
     private var lastFound: FrameResult? = null
     private var lastFoundAt = 0L
+    private var ink: GridDetector.InkResult? = null // from the latest frame that was read
 
     override fun analyze(image: ImageProxy) {
         image.use { frame ->
@@ -85,20 +90,28 @@ class FrameAnalyzer(
                     Core.bitwise_not(warped, warped)
                 }
                 val sharp = sharpness(warped) // Laplacian variance: same either polarity
-                val cells = GridDetector.extractCells(warped)
+                val isSharp = sharp > SHARP_ENOUGH
+                // colour only for frames that get read: copying + warping U/V costs time
+                val chroma = if (isSharp) warpChroma(frame, corners) else null
+                val extracted = GridDetector.extractCells(warped, chroma)
+                chroma?.let { it.first.release(); it.second.release() }
+                val cells = extracted.cells
                 val digits = cells.count { it != null }
                 val thumb = toBitmap(warped, 225)
                 warped.release()
 
-                if (sharp > SHARP_ENOUGH) read(cells)
-                val message = updateSolution(sharp > SHARP_ENOUGH)
+                if (isSharp) {
+                    read(cells)
+                    ink = extracted.ink
+                }
+                val message = updateSolution(isSharp)
 
                 val flat = FloatArray(8) { i -> (if (i % 2 == 0) corners[i / 2].x else corners[i / 2].y).toFloat() }
                 smoothed = smooth(flat, smoothed, gray.cols())
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, message,
-                    s?.puzzle, s?.solution)
+                    s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0)
                 lastFound = result
                 lastFoundAt = now
             } else if (lastFound != null && now - lastFoundAt < HOLD_NANOS) {
@@ -111,6 +124,7 @@ class FrameAnalyzer(
                 tracker.reset()
                 solved = null
                 solvedFrom = null
+                ink = null
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
                     (now - start) / 1_000_000, fps, "Point the camera at a sudoku")
             }
@@ -118,6 +132,20 @@ class FrameAnalyzer(
             gray.release()
             onResult(result)
         }
+    }
+
+    /**
+     * U and V of this frame, upright and warped like the gray grid (450x450). The planes
+     * are half resolution (YUV_420_888), so the corners are halved (GridDetector.warpHalf).
+     */
+    private fun warpChroma(image: ImageProxy, corners: Array<Point>): Pair<Mat, Mat> {
+        fun plane(index: Int): Mat {
+            val raw = chromaPlaneToMat(image, index)
+            val upright = rotateUpright(raw, image.imageInfo.rotationDegrees)
+            if (upright !== raw) raw.release()
+            return GridDetector.warpHalf(upright, corners).also { upright.release() }
+        }
+        return plane(1) to plane(2) // U (Cb), V (Cr)
     }
 
     /** Classify the filled cells of one sharp frame and add the reading to the vote. */
@@ -181,6 +209,27 @@ class FrameAnalyzer(
                 mat.put(y, 0, row)
             }
             return mat
+        }
+
+        /**
+         * U (index 1) or V (index 2) plane: half width and height. Pixels can be
+         * interleaved (pixelStride 2, NV21-like) and rows padded, so pick them out.
+         */
+        fun chromaPlaneToMat(image: ImageProxy, index: Int): Mat {
+            val plane = image.planes[index]
+            val buffer = plane.buffer
+            val w = (image.width + 1) / 2
+            val h = (image.height + 1) / 2
+            val ps = plane.pixelStride
+            val rowLen = (w - 1) * ps + 1 // the last row may end right after its last pixel
+            val row = ByteArray(rowLen)
+            val out = ByteArray(w * h)
+            for (y in 0 until h) {
+                buffer.position(y * plane.rowStride)
+                buffer.get(row, 0, rowLen)
+                for (x in 0 until w) out[y * w + x] = row[x * ps]
+            }
+            return Mat(h, w, CvType.CV_8UC1).also { it.put(0, 0, out) }
         }
 
         /** Camera frames arrive sideways; rotate so they match what the user sees. */

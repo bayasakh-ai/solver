@@ -119,52 +119,61 @@ Screens designed in Claude Design (now inside Claude as artifacts), implemented 
 4. **v1.2:** monetization.
 5. **Later:** iOS (see iOS plan).
 
-### Ignore user ink (v1, planned — not built)
+### Ignore user ink (v1, built 2026-11-08 for coloured pen; pencil not yet)
 
 Goal: a started puzzle (pen or pencil entries, pencil notes) scans as if blank. Solve
 from printed digits only. This is the v1 subset of the handwriting work: no reading
 of the user's digits yet. Black pen is out of scope (looks like print by colour and
-darkness; needs the v1.1 shape model).
+darkness; needs the v1.1 shape model). **Pencil is out of v1 too** (measured, below).
 
-Measured on photos/puzzle1.jpg, simulating the phone (640 px frame, chroma at half
-resolution like YUV_420_888), per non-empty cell:
+How it works (`ink.py` <-> `InkClassifier.kt` decide; `grid.py` <-> `GridDetector.kt`
+measure; numbers and reasoning in the `ink.py` docstring):
+- Each **connected ink piece** in a cell is judged, on the same crop and components as
+  `clean_cell`. That handles strokes spilling into a printed cell (puzzle1 r2c7) and
+  notes in corners.
+- Colour = distance of the piece's median (Cr, Cb) from **neutral ink**
+  (`neutral_distance`): neutral ink can show anything between paper offset x
+  inkY/paperY (a colour cast MULTIPLIES channels, so black is tinted less than paper)
+  and the paper offset itself (thin strokes at half-resolution chroma show the paper's
+  colour). Distance from that segment. A plain "distance from paper colour" made black
+  print read 7-12 under synthetic colour casts; "paper offset x k" alone made thin
+  newsprint read 7-8. The segment keeps printed <= 2.0 in both.
+- >= 12 -> user ink, removed from the binarized cell before `clean_cell` (binarize
+  unchanged, no retraining). 6-12 -> unsure: kept, cell flagged (overlay draws an orange
+  ring until the Check screen exists). < 6 -> printed.
+- Safety net: fewer than 17 non-empty cells left -> skip removal for that grid.
+- Chroma comes at half resolution like YUV_420_888 (Python downsamples Cr/Cb by 2 and
+  warps with corners/2; `FrameAnalyzer` reads U/V only on sharp frames that get read).
 
-| | printed (25) | red pen (56) |
-|---|---|---|
-| ink chroma, sqrt(Cr'^2+Cb'^2) | 2-3 | 50-62 |
-| ink darkness vs local paper, (paperY-inkY)/paperY | 0.70-0.88 | 0.32-0.42 |
+Measured (640 px frame or full size, chroma at half resolution):
 
-One photo, one pen, good light: these thresholds are starting points, not settled.
+| | printed | red pen (puzzle1) | synthetic pens (red/blue/navy) |
+|---|---|---|---|
+| distance from neutral ink | 0.0-2.0 (photos + colour-cast synth) | 42+ (69+ full size) | 0/1032 below 6, 14 below 12 |
+| darkness vs local paper | puzzle1 0.79-0.88, **puzzle2/3 0.42-0.60**, synth glare down to 0.12 | 0.33-0.43 | - |
 
-Design:
-- Classify each **connected ink piece**, not each cell. That handles strokes spilling
-  into a printed cell (puzzle1 r2c7) and pencil notes in corners.
-- User ink = chroma distance from the *local paper colour* > ~20 (colour casts shift
-  paper and ink together), or darkness vs local paper < ~0.55 (pencil).
-- Remove user pieces from the binarized cell before `clean_cell`. Training data has
-  no colour and `binarize` is unchanged, so the "binarize identically" rule holds
-  and no retraining is needed.
-- Pieces between the thresholds -> mark the cell low-confidence on the Check screen
-  (the user confirms). Never guess.
-- Safety net: if fewer than 17 printed cells would remain (e.g. a magazine printing
-  its digits in colour), skip the step for that grid.
-- Thresholds/decision in pure Kotlin (e.g. `InkClassifier.kt`: piece stats ->
-  printed / user / unsure); stats in `grid.py` / `GridDetector.kt`. `FrameAnalyzer`
-  must start reading the U/V planes (today only Y), warping them only on sharp
-  frames that get read.
+**Why darkness is not used (pencil):** the plan's "darkness < ~0.55 = pencil" would
+drop printed digits in 2 of 3 blank newspaper photos and in glare/blur/low_res synth
+(165/548 glare pieces < 0.55). Relative to the grid's darkest digits it is still
+0.21 (glare) / 0.46 (blur). Pencil needs the v1.1 shape model, or a better signal.
 
-Tests:
-1. Acceptance: `evaluate.py photos/` 75% -> 100%. puzzle1.txt holds only printed
-   digits, so it passes only if all 56 pen cells are ignored and all 25 printed kept.
-2. `inspect_photo.py`: add an ignored-ink mask panel and printed-kept / pen-ignored
-   counts with margins.
-3. `synth.py`: colour output plus `pen_marks` and `pencil` conditions.
-4. Main risk: faint printed digits (shadow/glare/low_res/blur) dropped as "pencil".
-   Run `--synth 20` before and after; no condition may drop.
-5. Kotlin: JVM test for `InkClassifier` on piece stats exported from puzzle1 (same
-   idea as PolarityParityTest).
-6. Real-world session: red pen, blue pen, pencil, pencil corner notes, black pen
-   (expected to fail in v1).
+Tests (status):
+1. Acceptance: `evaluate.py photos/` 75% -> **100%** (puzzle1: 56/56 pen cells ignored,
+   25/25 printed kept, margins 5.0 below "unsure" / 57 above "user").
+2. `inspect_photo.py`: ignored-ink panel (magenta = removed, orange ring = unsure) and
+   printed-kept / pen-ignored counts with chroma margins. Done.
+3. `synth.py`: colour `pen_marks` and `pencil` conditions (a third of user digits wrong,
+   spills, corner notes, colour casts), appended so the 10 gray conditions keep the same
+   images per seed. pen_marks 100%; pencil 0% (expected: not handled in v1).
+4. `--synth 20` before/after: all 10 gray conditions identical (gray -> Cr = Cb = 128,
+   chroma 0, nothing removed by construction).
+5. `InkClassifierTest` (JVM) on pieces from `export_ink_cases.py`: puzzle1 (full + 640 px),
+   puzzle2, synthetic pen_marks, threshold/geometry edge cases. Kotlin recomputes chroma
+   from the raw medians, so `neutralDistance` is checked too.
+6. **Still to do — real-world session on the phone:** red pen, blue pen (thin dark
+   ballpoint is the weak case), pencil + pencil corner notes (expected to fail),
+   black pen (expected to fail), warm indoor light, a magazine with coloured digits
+   (safety net). Also time `warpChroma` + piece stats on sharp frames.
 
 ---
 
@@ -183,6 +192,8 @@ Tests:
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
+  ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
+  export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   inspect_photo.py     stage-by-stage report + side-by-side image for real photos
   photos/              real test photos + truth files (see Commands)
   model.tflite         current model (also copied into android/app/src/main/assets/)
@@ -194,9 +205,11 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81
     PuzzleReader.kt    PuzzleTracker (frame voting) + SelfCorrect
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
+    InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
     Solver.kt          Kotlin port of solver.py
-  app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest
-                       (plain JVM, no phone; resources/polarity/ from export_polarity_cases.py)
+  app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
+                       InkClassifierTest (plain JVM, no phone; resources/polarity/ and
+                       resources/ink/ from export_polarity_cases.py / export_ink_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
 ```
 
@@ -219,8 +232,9 @@ data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressC
    homography fit -> rough corners -> `refineEdges` snaps each edge to the strongest
    line via projection profiles. Corners ordered TL, TR, BR, BL.
 4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
-5. `extractCells`: `binarize` (adaptiveThreshold 21, 10) -> `cleanCell` -> 28x28
-   centred digit or null (empty).
+5. `extractCells`: `binarize` (adaptiveThreshold 21, 10) -> remove user-ink pieces
+   (colour, sharp frames only; see "Ignore user ink") -> `cleanCell` -> 28x28 centred
+   digit or null (empty).
 6. Model -> 9 probabilities per filled cell.
 7. Live only: sharp frames only (Laplacian variance of the WARPED grid > SHARP_ENOUGH=100);
    `PuzzleTracker` keeps last 5 readings, a cell is trusted when >= 3 agree.
@@ -273,6 +287,7 @@ python run.py photo.jpg                   # single photo -> photo_solved.jpg
 python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x_inspect.png
 python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
+python export_ink_cases.py                # after changing ink.py / piece stats in grid.py
 ```
 
 After retraining, ALWAYS update the app:
@@ -316,11 +331,14 @@ the printed reading. inspect_photo.py reads both.
 - Synthetic (Windows, seed 0, after per-cell dark-mode vote): 95% total. clean/rotate/
   glare/jpeg/dark_mode/touching_lines 100%, tilt 95%, shadow 95%, low_res 90%,
   **blur 70%** (6 no_grid). Before the vote on the same machine: 91%, blur 30%.
-- Real photos (`photos/puzzle1-4.jpg` with truths; `evaluate.py photos/` = 75%): **3 of 4
-  solve.** puzzle2, puzzle3 and puzzle4 are blank newspaper puzzles (3 and 4 are two
+  With ignore-user-ink (2026-11-08): those 10 unchanged, plus pen_marks 100%,
+  pencil 0% (expected, v1.1) -> 88% total over 240.
+- Real photos: **4 of 4 solve (100%)** since ignore-user-ink: puzzle1's 56 red-pen
+  cells are ignored and its 25 printed digits solve it. Before that (75%), **3 of 4
+  solved:** puzzle2, puzzle3 and puzzle4 are blank newspaper puzzles (3 and 4 are two
   shots of the same puzzle) and all solve, puzzle2 with one self-correction. These
   are the three behind the earlier "3/3". puzzle1 is a *completed* puzzle — 25
-  printed digits + 56 in red pen — and is unsolvable today. Stage by stage (checked 2026-11-08 against a hand
+  printed digits + 56 in red pen — and was unsolvable. Stage by stage (checked 2026-11-08 against a hand
   transcription): grid, warp and polarity correct; printed digits 25/25 at confidence
   1.00; pen digits 36/56 right, 19 misread, 1 missed (the r2c7 "7" crosses into the
   next cell). That's 20 errors; self_correct allows 2. The model has only ever seen

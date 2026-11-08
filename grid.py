@@ -3,6 +3,8 @@ Port these functions 1:1 to Kotlin with OpenCV for Android."""
 import cv2
 import numpy as np
 
+from ink import Piece, USER, cell_unsure, kind, neutral_distance, use_removal
+
 WARP_SIZE = 450  # 9 * 50 px cells
 DIGIT_SIZE = 28  # classifier input size
 
@@ -239,9 +241,91 @@ def binarize(gray_img):
                                  cv2.THRESH_BINARY_INV, 21, 10)
 
 
-def extract_cells(warped):
-    """9x9 list: each entry is a 28x28 digit image or None (empty)."""
+def chroma_planes(img, corners):
+    """(Cr, Cb) of the grid, warped like the gray image, or None for a gray photo.
+    Taken at HALF resolution, like the phone's YUV_420_888 U/V planes, so the
+    numbers the thresholds were set on match what the app measures."""
+    if img.ndim == 2:
+        return None
+    ycc = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+    h, w = ycc.shape[:2]
+    half = [cv2.resize(ycc[..., k], (w // 2, h // 2), interpolation=cv2.INTER_AREA) for k in (1, 2)]
+    return tuple(warp(p, corners / 2)[0] for p in half)
+
+
+def _lower_median(values):
+    """Median as an element of the data (lower middle), easy to match in Kotlin."""
+    return float(np.sort(values, axis=None)[(values.size - 1) // 2])
+
+
+def cell_pieces(bin_cell, gray_cell, cr_cell, cb_cell):
+    """Stats of each ink piece in one cell, on the SAME crop and components as
+    clean_cell. Returns (pieces, labels, offset): pieces = [(label, ink.Piece, raw)],
+    Piece.counts = clean_cell would keep the piece (not a speck / line fragment),
+    raw = (ink Cr, ink Cb, paper Cr, paper Cb offsets from 128, inkY/paperY): the
+    inputs of Piece.chroma = ink.neutral_distance(*raw), how far the piece's colour is
+    from any neutral (black/gray) ink.
+    darkness: (paperY - inkY) / paperY, reported only (see ink.py)."""
+    h, w = bin_cell.shape
+    m = int(0.12 * h)
+    inner = bin_cell[m:h - m, m:w - m]
+    ih, iw = inner.shape
+    n, labels, stats, cents = cv2.connectedComponentsWithStats(inner, connectivity=8)
+    paper = labels == 0
+    crop = lambda a: a[m:h - m, m:w - m]
+    g, cr, cb = crop(gray_cell), crop(cr_cell), crop(cb_cell)
+    if paper.any():
+        py, pcr, pcb = (_lower_median(a[paper]) for a in (g, cr, cb))
+    else:  # cell completely inked: no local paper, compare with neutral grey
+        py, pcr, pcb = 255.0, 128.0, 128.0
+    pieces = []
+    for i in range(1, n):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < 0.01 * ih * iw:
+            continue  # noise speck: clean_cell ignores it anyway
+        sel = labels == i
+        darkness = (py - _lower_median(g[sel])) / max(py, 1.0)
+        raw = (_lower_median(cr[sel]) - 128, _lower_median(cb[sel]) - 128,
+               pcr - 128, pcb - 128, 1.0 - darkness)
+        cx, cy = cents[i]
+        counts = bool(abs(cx - iw / 2) <= iw * 0.35 and abs(cy - ih / 2) <= ih * 0.35)
+        pieces.append((i, Piece(neutral_distance(*raw), darkness, counts), raw))
+    return pieces, labels, m
+
+
+def extract_cells(warped, chroma=None):
+    """Returns (cells, ink). cells: 9x9 list of 28x28 digit images or None (empty).
+    With chroma planes (from chroma_planes), user ink (coloured pen) is removed from
+    the binarized cells BEFORE clean_cell, so the model only sees printed digits and
+    binarize/clean_cell stay exactly as in training. ink = None without chroma, else
+    a dict: applied (False = safety net kept everything), removed / unsure (9x9 bool),
+    pieces (9x9 lists of (ink.Piece, raw)), mask (removed pixels)."""
     th = binarize(warped)
     step = warped.shape[0] // 9
-    return [[clean_cell(th[r * step:(r + 1) * step, c * step:(c + 1) * step])
-             for c in range(9)] for r in range(9)]
+    sl = lambda r, c: np.s_[r * step:(r + 1) * step, c * step:(c + 1) * step]
+    plain = lambda: [[clean_cell(th[sl(r, c)]) for c in range(9)] for r in range(9)]
+    if chroma is None:
+        return plain(), None
+    cr, cb = chroma
+    cleaned = th.copy()
+    removed = np.zeros((9, 9), bool)
+    unsure = np.zeros((9, 9), bool)
+    pieces = [[None] * 9 for _ in range(9)]
+    for r in range(9):
+        for c in range(9):
+            ps, labels, m = cell_pieces(th[sl(r, c)], warped[sl(r, c)], cr[sl(r, c)], cb[sl(r, c)])
+            pieces[r][c] = [(p, raw) for _, p, raw in ps]
+            user = [i for i, p, _ in ps if kind(p.chroma) == USER]
+            if user:
+                inner = cleaned[sl(r, c)][m:step - m, m:step - m]  # view into cleaned
+                inner[np.isin(labels, user)] = 0
+                removed[r, c] = True
+            unsure[r, c] = cell_unsure([p for _, p, _ in ps])
+    cells = [[clean_cell(cleaned[sl(r, c)]) for c in range(9)] for r in range(9)]
+    left = sum(x is not None for row in cells for x in row)
+    applied = use_removal(left)
+    if not applied:
+        cells, removed, unsure = plain(), np.zeros((9, 9), bool), np.zeros((9, 9), bool)
+    ink = {"applied": applied, "removed": removed, "unsure": unsure, "pieces": pieces,
+           "printed_cells_left": left, "mask": (th > 0) & (cleaned == 0)}
+    return cells, ink

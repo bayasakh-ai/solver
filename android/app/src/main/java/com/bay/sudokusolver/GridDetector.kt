@@ -259,17 +259,123 @@ object GridDetector {
         return warped to m
     }
 
-    /** 81 cells, row by row: a 28x28 digit image (ByteArray(784)) or null if empty. */
-    fun extractCells(warped: Mat): List<ByteArray?> {
+    /**
+     * What ink removal did on one grid. applied = false: the safety net kept everything.
+     * removed / unsure: per cell, row by row (unsure = the Check screen should ask).
+     */
+    class InkResult(val applied: Boolean, val removed: BooleanArray, val unsure: BooleanArray)
+
+    class Cells(val cells: List<ByteArray?>, val ink: InkResult?)
+
+    /**
+     * Warp a half-resolution chroma plane (U or V of YUV_420_888, already upright) with
+     * the grid's full-resolution corners, giving 450x450 like the gray warp.
+     * Same as grid.chroma_planes.
+     */
+    fun warpHalf(plane: Mat, corners: Array<Point>): Mat =
+        warp(plane, Array(4) { Point(corners[it].x / 2, corners[it].y / 2) }).let { (w, m) -> m.release(); w }
+
+    /**
+     * 81 cells, row by row: a 28x28 digit image (ByteArray(784)) or null if empty.
+     * With warped chroma planes (u, v from warpHalf), user ink (coloured pen) is removed
+     * from the binarized cells BEFORE cleanCell, so binarize/cleanCell stay exactly as in
+     * training. Same as grid.extract_cells; decisions in InkClassifier.
+     */
+    fun extractCells(warped: Mat, chroma: Pair<Mat, Mat>? = null): Cells {
         val th = binarize(warped)
         val step = WARP_SIZE / 9
-        val cells = ArrayList<ByteArray?>(81)
-        for (r in 0 until 9) for (c in 0 until 9) {
-            val cell = th.submat(r * step, (r + 1) * step, c * step, (c + 1) * step)
-            cells.add(cleanCell(cell))
+        fun cell(m: Mat, i: Int) = m.submat(i / 9 * step, (i / 9 + 1) * step, i % 9 * step, (i % 9 + 1) * step)
+        fun clean(m: Mat) = (0 until 81).map { cleanCell(cell(m, it)) }
+
+        if (chroma == null) return Cells(clean(th), null).also { th.release() }
+        val original = th.clone() // the safety net may need the cells without removal
+        val removed = BooleanArray(81)
+        val unsure = BooleanArray(81)
+        for (i in 0 until 81) {
+            val pieces = removeUserInk(cell(th, i), cell(warped, i), cell(chroma.first, i), cell(chroma.second, i))
+            removed[i] = pieces.any { InkClassifier.kind(it) == InkKind.USER }
+            unsure[i] = InkClassifier.cellUnsure(pieces)
         }
-        th.release()
-        return cells
+        var cells = clean(th)
+        val applied = InkClassifier.useRemoval(cells.count { it != null })
+        if (!applied) {
+            cells = clean(original)
+            removed.fill(false)
+            unsure.fill(false)
+        }
+        th.release(); original.release()
+        return Cells(cells, InkResult(applied, removed, unsure))
+    }
+
+    /**
+     * Measures every ink piece of one cell (same crop and components as cleanCell) and
+     * erases the USER pieces from [bin] in place. Same as grid.cell_pieces.
+     * Chroma = how far the piece's colour is from any neutral ink (InkClassifier.neutralDistance).
+     */
+    private fun removeUserInk(bin: Mat, gray: Mat, u: Mat, v: Mat): List<InkPiece> {
+        val h = bin.rows()
+        val m = (0.12 * h).toInt()
+        fun crop(x: Mat) = x.submat(m, h - m, m, x.cols() - m)
+        val inner = crop(bin)
+        val ih = inner.rows()
+        val iw = inner.cols()
+        val labels = Mat()
+        val stats = Mat()
+        val cents = Mat()
+        val n = Imgproc.connectedComponentsWithStats(inner, labels, stats, cents, 8, CvType.CV_32S)
+        val lab = IntArray(ih * iw).also { labels.get(0, 0, it) }
+        labels.release()
+        fun bytes(x: Mat) = ByteArray(ih * iw).also { crop(x).get(0, 0, it) }
+        val g = bytes(gray)
+        val cu = bytes(u)
+        val cv = bytes(v)
+
+        // per label: histograms of Y, U, V -> lower medians without sorting (label 0 = paper)
+        val hist = Array(n) { Array(3) { IntArray(256) } }
+        for (k in lab.indices) {
+            val hk = hist[lab[k]]
+            hk[0][g[k].toInt() and 0xFF]++
+            hk[1][cu[k].toInt() and 0xFF]++
+            hk[2][cv[k].toInt() and 0xFF]++
+        }
+        val paperCount = hist[0][0].sum()
+        val paperY = if (paperCount > 0) lowerMedian(hist[0][0]) else 255.0
+        val paperU = if (paperCount > 0) lowerMedian(hist[0][1]) else 128.0
+        val paperV = if (paperCount > 0) lowerMedian(hist[0][2]) else 128.0
+
+        val pieces = ArrayList<InkPiece>()
+        val user = BooleanArray(n)
+        for (i in 1 until n) {
+            val area = stats.get(i, Imgproc.CC_STAT_AREA)[0].toInt()
+            if (area < 0.01 * ih * iw) continue // noise speck: cleanCell ignores it anyway
+            val darkness = (paperY - lowerMedian(hist[i][0])) / max(paperY, 1.0)
+            val chroma = InkClassifier.neutralDistance(lowerMedian(hist[i][2]) - 128, lowerMedian(hist[i][1]) - 128,
+                paperV - 128, paperU - 128, 1.0 - darkness)
+            val cx = cents.get(i, 0)[0]
+            val cy = cents.get(i, 1)[0]
+            val counts = abs(cx - iw / 2.0) <= iw * 0.35 && abs(cy - ih / 2.0) <= ih * 0.35
+            val piece = InkPiece(chroma, darkness, counts)
+            pieces.add(piece)
+            user[i] = InkClassifier.kind(piece) == InkKind.USER
+        }
+        stats.release(); cents.release()
+        if (user.any { it }) {
+            val px = ByteArray(ih * iw).also { inner.get(0, 0, it) }
+            for (k in lab.indices) if (user[lab[k]]) px[k] = 0
+            inner.put(0, 0, px) // writes through to the binarized grid
+        }
+        return pieces
+    }
+
+    /** Element at index (count-1)/2 of the sorted values = numpy's lower median. */
+    private fun lowerMedian(hist: IntArray): Double {
+        val target = (hist.sum() - 1) / 2
+        var seen = 0
+        for (value in hist.indices) {
+            seen += hist[value]
+            if (seen > target) return value.toDouble()
+        }
+        return 0.0
     }
 
     /** Same logic as grid.clean_cell: keep every piece of the digit, centre it in 28x28. */

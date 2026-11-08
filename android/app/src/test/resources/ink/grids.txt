@@ -1,0 +1,10 @@
+real_puzzle1 25 1
+real_puzzle1_640 25 1
+real_puzzle2 24 1
+synth_pen_marks_0 31 1
+synth_pen_marks_1 27 1
+synth_pen_marks_2 31 1
+edge_left_0 0 0
+edge_left_16 16 0
+edge_left_17 17 1
+edge_left_81 81 1

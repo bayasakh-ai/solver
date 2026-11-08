@@ -6,7 +6,7 @@ import sys
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, extract_cells, looks_dark, WARP_SIZE
+from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, WARP_SIZE
 from solver import solve, is_plausible
 
 
@@ -111,9 +111,12 @@ def _process_once(img, model):
     warped, M = warp(gray, corners)
     if looks_dark(warped):  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
-    read, probs = read_digits(extract_cells(warped), model)
-    # corners/warped/probs are only for inspect_photo.py: it shows what was really read
-    result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs}
+    # user ink (coloured pen) is removed before reading: solve from printed digits only
+    cells, ink = extract_cells(warped, chroma_planes(img, corners))
+    read, probs = read_digits(cells, model)
+    # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
+    result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
+              "ink": ink}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

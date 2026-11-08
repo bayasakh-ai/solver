@@ -9,8 +9,12 @@ truth files next to the photo:
 Prints: grid found?, polarity, per printed/handwritten cell: right / misread /
 missed (seen as empty) / extra (digit read where the truth is empty), confidences,
 and — when there are user entries — whether reading only the printed cells solves.
+Ink: printed cells kept / pen cells ignored, with the chroma margin of each side to
+the thresholds in ink.py (only pieces clean_cell would keep are counted).
 Writes eval_failures/<name>_inspect.png:
-  photo + found grid | warped grid as read | binarized cells | read vs truth
+  photo + found grid | warped grid as read | ignored ink | binarized cells | read vs truth
+The ignored-ink panel paints removed user-ink pixels magenta and rings cells with an
+unsure piece (the Check screen asks the user about those).
 In the last panel wrong cells are shaded and show the true digit small in the
 corner; printed truth is bold, handwritten truth thin. No truth file -> the read
 grid is shown without judging."""
@@ -22,6 +26,7 @@ import numpy as np
 
 from evaluate import load_truth
 from grid import binarize, cell_votes, preprocess
+from ink import UNSURE_CHROMA, USER, USER_CHROMA, kind
 from run import process, self_correct
 
 OUT_DIR = "eval_failures"
@@ -40,7 +45,7 @@ def report_cells(read, conf, expected, mask, label):
     n = int(mask.sum())
     if n == 0:
         return
-    if label == "empty":
+    if label in ("empty", "pen ignored"):
         extra = mask & (read != 0)
         print(f"  {label:12s} {n:2d} cells: {int(extra.sum())} read as a digit (extra)")
         return
@@ -50,6 +55,55 @@ def report_cells(read, conf, expected, mask, label):
     mean = lambda m: f"{conf[m].mean():.2f}" if m.any() else "  - "
     print(f"  {label:12s} {n:2d} cells: right {int(right.sum()):2d}, misread {int(wrong.sum()):2d}, "
           f"missed {int(missed.sum())}  | mean confidence right {mean(right)}, wrong {mean(wrong)}")
+
+
+def report_ink(ink, read, printed_mask, user_mask):
+    """Printed-kept / pen-ignored counts and how close each side came to a threshold."""
+    if ink is None:
+        print("  ink: gray image, no colour to judge")
+        return
+    if not ink["applied"]:
+        print("  ink: removal SKIPPED (safety net: fewer than 17 printed cells would remain)")
+    unsure = [f"r{r + 1}c{c + 1}" for r, c in zip(*np.nonzero(ink["unsure"]))]
+    print(f"  ink: user ink removed in {int(ink['removed'].sum())} cells; unsure cells "
+          f"{len(unsure)}{' ' + ' '.join(unsure) if unsure else ''}")
+    if printed_mask is None:
+        return
+    chroma = lambda mask: [ch for r, c in zip(*np.nonzero(mask))
+                           for p, _ in ink["pieces"][r][c] if p.counts for ch in [p.chroma]]
+    removed_printed = printed_mask & ink["removed"] & np.array(
+        [[any(p.counts and kind(p.chroma) == USER for p, _ in ink["pieces"][r][c]) for c in range(9)]
+         for r in range(9)])
+    kept = int((printed_mask & (read != 0) & ~removed_printed).sum())
+    pc = chroma(printed_mask)
+    print(f"    printed cells kept {kept}/{int(printed_mask.sum())}; printed piece chroma max "
+          f"{max(pc, default=0):.1f} (margin {UNSURE_CHROMA - max(pc, default=0):.1f} to unsure "
+          f"{UNSURE_CHROMA:.0f}, {USER_CHROMA - max(pc, default=0):.1f} to user {USER_CHROMA:.0f})")
+    if user_mask.any():
+        uc = chroma(user_mask)
+        ignored = int((user_mask & (read == 0)).sum())
+        print(f"    pen cells ignored {ignored}/{int(user_mask.sum())}; pen piece chroma min "
+              f"{min(uc, default=0):.1f} (margin {min(uc, default=0) - USER_CHROMA:.1f} above user "
+              f"{USER_CHROMA:.0f})")
+    dark = [dk for r, c in zip(*np.nonzero(printed_mask))
+            for p, _ in ink["pieces"][r][c] if p.counts for dk in [p.darkness]]
+    if dark:
+        print(f"    (darkness, not used: printed {min(dark):.2f}-{max(dark):.2f}"
+              + (lambda d: f", pen {min(d):.2f}-{max(d):.2f})" if d else ")")(
+                  [dk for r, c in zip(*np.nonzero(user_mask))
+                   for p, _ in ink["pieces"][r][c] if p.counts for dk in [p.darkness]]))
+
+
+def ink_panel(warped, ink):
+    p = cv2.cvtColor(warped, cv2.COLOR_GRAY2BGR)
+    if ink is None:
+        return p
+    p[ink["mask"]] = (255, 0, 255)
+    for r, c in zip(*np.nonzero(ink["unsure"])):
+        cv2.circle(p, (c * 50 + 25, r * 50 + 25), 22, (0, 140, 255), 2)
+    if not ink["applied"]:
+        cv2.putText(p, "skipped", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+    return p
 
 
 def panel(img, height=H):
@@ -68,6 +122,8 @@ def board_panel(read, expected, printed_mask, user_mask):
         for c in range(9):
             x, y = c * 50, r * 50
             ok = expected is None or read[r, c] == expected[r, c]
+            if user_mask[r, c] and expected is not None and expected[r, c] == 0:
+                ok = read[r, c] == 0  # ignored pen cell: right when nothing was read
             if not ok:
                 cv2.rectangle(b, (x + 2, y + 2), (x + 48, y + 48), (180, 180, 255), -1)
             txt = str(read[r, c]) if read[r, c] else ("-" if not ok else "")
@@ -117,9 +173,11 @@ def inspect(path, model):
         printed_arr = np.array(printed_t)
         user_arr = np.array(user_t) if user_t is not None else np.zeros((9, 9), int)
         printed_mask, user_mask = printed_arr > 0, user_arr > 0
-        expected = np.where(printed_mask, printed_arr, user_arr)
+        # user ink removed: pen cells should read empty; otherwise they should read the pen digit
+        ignoring = res.get("ink") is not None and res["ink"]["applied"]
+        expected = printed_arr if ignoring else np.where(printed_mask, printed_arr, user_arr)
         report_cells(read, conf, expected, printed_mask, "printed")
-        report_cells(read, conf, expected, user_mask, "handwritten")
+        report_cells(read, conf, expected, user_mask, "pen ignored" if ignoring else "handwritten")
         report_cells(read, conf, expected, ~(printed_mask | user_mask), "empty")
         for r in range(9):
             for c in range(9):
@@ -131,6 +189,8 @@ def inspect(path, model):
     else:
         printed_mask = user_mask = np.zeros((9, 9), bool)
         print("  no truth file: showing the reading only")
+
+    report_ink(res.get("ink"), read, printed_mask if printed_t is not None else None, user_mask)
 
     errors = "" if expected is None else f", reading differs from truth in {int((read != expected).sum())} cells"
     fixes = res.get("fixes") or []
@@ -146,7 +206,8 @@ def inspect(path, model):
 
     photo = img.copy()
     cv2.polylines(photo, [corners.astype(np.int32)], True, (0, 200, 0), max(2, img.shape[0] // 200))
-    sheet = np.hstack([panel(photo), gap, panel(res["warped"]), gap, panel(binarize(res["warped"])),
+    sheet = np.hstack([panel(photo), gap, panel(res["warped"]), gap,
+                       panel(ink_panel(res["warped"], res.get("ink"))), gap, panel(binarize(res["warped"])),
                        gap, board_panel(read, expected, printed_mask, user_mask)])
     cv2.imwrite(out_path, sheet)
     print(f"  saved {out_path}")

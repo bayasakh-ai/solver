@@ -106,8 +106,9 @@ class MainActivity : ComponentActivity() {
     private fun statusText(r: FrameResult?): String = when {
         r == null -> "Starting camera…"
         r.corners == null -> r.message
-        else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms".format(
-            r.message, r.digits, r.sharpness, r.fps, r.processMs)
+        else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms%s".format(
+            r.message, r.digits, r.sharpness, r.fps, r.processMs,
+            if (r.inkCells > 0) " · ignoring your ink in ${r.inkCells} cells" else "")
     }
 
     private fun startCamera(previewView: PreviewView) {
@@ -205,6 +206,17 @@ private fun GridOverlay(result: FrameResult?, modifier: Modifier = Modifier) {
             moveTo(tl.x, tl.y); lineTo(tr.x, tr.y); lineTo(br.x, br.y); lineTo(bl.x, bl.y); close()
         }
         drawPath(outline, color, style = Stroke(width = 4.dp.toPx()))
+
+        // cells whose ink might be the user's: an orange RING (a shape, not only a colour),
+        // until the Check screen lets the user confirm them
+        r.unsure?.forEachIndexed { i, unsure ->
+            if (!unsure) return@forEachIndexed
+            val u = (i % 9 + 0.5f) / 9f
+            val row = i / 9
+            val cellHeight = (at(u, (row + 1f) / 9f) - at(u, row / 9f)).getDistance()
+            drawCircle(Color(0xFFE67E22), radius = cellHeight * 0.42f, center = at(u, (row + 0.5f) / 9f),
+                style = Stroke(width = 2.5.dp.toPx()))
+        }
 
         // the answers, drawn into each empty cell with the cell's own size and perspective
         val puzzle = r.puzzle ?: return@Canvas
