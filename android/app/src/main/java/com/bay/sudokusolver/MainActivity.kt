@@ -113,8 +113,8 @@ class MainActivity : ComponentActivity() {
     private fun statusText(r: FrameResult?): String = when {
         r == null -> "Starting camera…"
         r.corners == null -> stateText(r.state)
-        else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms%s".format(
-            stateText(r.state), r.digits, r.sharpness, r.fps, r.processMs,
+        else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms · steps %d µs%s".format(
+            stateText(r.state), r.digits, r.sharpness, r.fps, r.processMs, r.stepsMicros,
             if (r.inkCells > 0) " · ignoring your ink in ${r.inkCells} cells" else "")
     }
 
