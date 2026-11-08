@@ -23,7 +23,7 @@ data class FrameResult(
     val digits: Int,               // filled cells found
     val processMs: Long,
     val fps: Double,
-    val message: String,           // what the user should know right now
+    val state: ScanState,          // what the scanner is doing; the UI words it
     val puzzle: IntArray? = null,  // givens used for solving (after any fixes)
     val solution: IntArray? = null,
     val unsure: BooleanArray? = null, // cells with ink that may be the user's: ask on Check
@@ -104,13 +104,13 @@ class FrameAnalyzer(
                     read(cells)
                     ink = extracted.ink
                 }
-                val message = updateSolution(isSharp)
+                val state = updateSolution(isSharp)
 
                 val flat = FloatArray(8) { i -> (if (i % 2 == 0) corners[i / 2].x else corners[i / 2].y).toFloat() }
                 smoothed = smooth(flat, smoothed, gray.cols())
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
-                    (System.nanoTime() - start) / 1_000_000, fps, message,
+                    (System.nanoTime() - start) / 1_000_000, fps, state,
                     s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0)
                 lastFound = result
                 lastFoundAt = now
@@ -126,7 +126,7 @@ class FrameAnalyzer(
                 solvedFrom = null
                 ink = null
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
-                    (now - start) / 1_000_000, fps, "Point the camera at a sudoku")
+                    (now - start) / 1_000_000, fps, ScanState.Searching)
             }
             if (source !== gray) source.release()
             gray.release()
@@ -163,22 +163,14 @@ class FrameAnalyzer(
         tracker.add(grid, probs)
     }
 
-    /** Solve when the vote produces a new stable reading; returns the status message. */
-    private fun updateSolution(isSharp: Boolean): String {
+    /** Solve when the vote produces a new stable reading; returns the scan state. */
+    private fun updateSolution(isSharp: Boolean): ScanState {
         val consensus = tracker.consensus()
         if (consensus != null && !consensus.first.contentEquals(solvedFrom)) {
             solved = SelfCorrect.solve(consensus.first, consensus.second)
             solvedFrom = consensus.first
         }
-        val s = solved
-        return when {
-            s?.solution != null && s.fixes.isNotEmpty() -> "Solved ✓ (fixed ${s.fixes.size} misread digit${if (s.fixes.size > 1) "s" else ""})"
-            s?.solution != null -> "Solved ✓"
-            s != null && !Solver.isPlausible(s.puzzle) -> "Too few digits found — move closer"
-            s != null -> "Can't solve this reading — try better light or another angle"
-            !isSharp -> "Hold steady…"
-            else -> "Reading digits… ${tracker.frames}/${tracker.windowSize}"
-        }
+        return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize)
     }
 
     /** Average with the previous corners when they're close, so the outline doesn't jitter. */

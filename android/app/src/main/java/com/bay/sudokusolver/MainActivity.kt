@@ -104,11 +104,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Temporary wording until the docked bar (stage 2, step 4) replaces the status line.
+    private fun stateText(s: ScanState): String = when (s) {
+        ScanState.Searching -> "Point the camera at a sudoku"
+        is ScanState.Reading -> "Reading digits… ${s.frames}/${s.window}"
+        is ScanState.HoldSteady -> "Hold steady…"
+        is ScanState.Solved ->
+            if (s.fixes == 0) "Solved ✓" else "Solved ✓ (fixed ${s.fixes} misread digit${if (s.fixes > 1) "s" else ""})"
+        is ScanState.NeedsReview -> when (s.reason) {
+            ScanState.Reason.TOO_FEW_DIGITS -> "Too few digits found — move closer"
+            ScanState.Reason.NO_UNIQUE_SOLUTION -> "Can't solve this reading — try better light or another angle"
+        }
+    }
+
     private fun statusText(r: FrameResult?): String = when {
         r == null -> "Starting camera…"
-        r.corners == null -> r.message
+        r.corners == null -> stateText(r.state)
         else -> "%s\n%d digits · sharpness %.0f · %.0f fps · %d ms%s".format(
-            r.message, r.digits, r.sharpness, r.fps, r.processMs,
+            stateText(r.state), r.digits, r.sharpness, r.fps, r.processMs,
             if (r.inkCells > 0) " · ignoring your ink in ${r.inkCells} cells" else "")
     }
 

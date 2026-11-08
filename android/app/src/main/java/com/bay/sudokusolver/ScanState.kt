@@ -1,0 +1,46 @@
+package com.bay.sudokusolver
+
+/**
+ * What the live scanner is doing right now, as data. The UI maps each state to its
+ * outline pattern, status chip and bottom-bar text; FrameAnalyzer only decides the
+ * state. Pure Kotlin (no Android imports) so it moves to the shared iOS module.
+ */
+sealed interface ScanState {
+    /** No grid in view. */
+    data object Searching : ScanState
+
+    /** Grid found, collecting sharp readings for the vote. */
+    data class Reading(val frames: Int, val window: Int) : ScanState
+
+    /** Grid found but the frame is blurred: progress pauses. */
+    data class HoldSteady(val frames: Int, val window: Int) : ScanState
+
+    /** Unique solution. [fixes] = misread digits self-correction changed. */
+    data class Solved(val fixes: Int) : ScanState
+
+    /** The vote settled but the reading can't be solved. */
+    data class NeedsReview(val reason: Reason) : ScanState
+
+    enum class Reason {
+        /** Fewer than 17 digits: no sudoku with a unique solution has that few. */
+        TOO_FEW_DIGITS,
+        /** Enough digits, but no unique solution even after self-correction. */
+        NO_UNIQUE_SOLUTION,
+    }
+
+    companion object {
+        /**
+         * State for a frame where the grid was found. [solved] is the last
+         * self-correction result for the current consensus (null = no consensus yet).
+         * Once a reading is solved or rejected it stays that way while the grid is in
+         * view, even on blurred frames; only a new consensus changes it.
+         */
+        fun decide(solved: SolveResult?, isSharp: Boolean, frames: Int, window: Int): ScanState = when {
+            solved?.solution != null -> Solved(solved.fixes.size)
+            solved != null && !Solver.isPlausible(solved.puzzle) -> NeedsReview(Reason.TOO_FEW_DIGITS)
+            solved != null -> NeedsReview(Reason.NO_UNIQUE_SOLUTION)
+            !isSharp -> HoldSteady(frames, window)
+            else -> Reading(frames, window)
+        }
+    }
+}
