@@ -1,6 +1,7 @@
 package com.bay.sudokusolver.ui.camera
 
 import android.content.Context
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -30,9 +31,7 @@ import com.bay.sudokusolver.ui.theme.Chrome
 import com.bay.sudokusolver.ui.theme.GridOutline
 import com.bay.sudokusolver.ui.theme.LinePattern
 import com.bay.sudokusolver.ui.theme.OutlineStyle
-import com.bay.sudokusolver.ui.theme.SudokuColors
 import com.bay.sudokusolver.ui.theme.SudokuTheme
-import com.bay.sudokusolver.ui.theme.answerHaloWidth
 import com.bay.sudokusolver.ui.theme.outline
 import kotlin.math.hypot
 import kotlin.math.max
@@ -55,28 +54,55 @@ private const val ANSWER_SIZE = 0.68f
 /** Halo per side relative to the digit size: the theme's 2.5 dp at 34 sp. */
 private const val HALO_PER_EM = 2.5f / 34f
 
-/** Native paints for the answer digits: Lora semibold over a stroked halo. */
+/** Side of the flat cell square that digits and rings are laid out in (local units). */
+private const val CELL = 100f
+private val CELL_SQUARE = floatArrayOf(0f, 0f, CELL, 0f, CELL, CELL, 0f, CELL)
+
+/** Unsure ring: radius and stroke in local cell units. */
+private const val RING_RADIUS = 44f
+private const val RING_WIDTH = 7f
+
+/**
+ * Native drawing objects for the overlay. Digits are cached as outlines (Lora
+ * semibold, centred in the flat cell) and transformed into each cell's perspective
+ * as paths: text drawn through a perspective matrix isn't reliably supported by
+ * hardware rendering on older Android versions, paths are. Main thread only.
+ */
 private class AnswerPaints(context: Context) {
     private val lora: Typeface = ResourcesCompat.getFont(context, R.font.lora) ?: Typeface.SERIF
 
-    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = lora
-        textAlign = Paint.Align.CENTER
-        // variable font: weight from the wght axis (API 26+); 24-25 keep the regular cut
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) fontVariationSettings = "'wght' 600"
-    }
-    val halo = Paint(fill).apply {
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
     }
+    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    val matrix = Matrix()
+    val work = android.graphics.Path()
 
-    /** Baseline offset that centres a digit vertically, as a fraction of the text size. */
-    val centreOffset: Float = run {
-        val probe = Paint(fill).apply { textSize = 100f }
-        val bounds = Rect()
-        probe.getTextBounds("0123456789", 0, 10, bounds)
-        -bounds.exactCenterY() / 100f
+    /** Ring outline in local cell units. */
+    val ring = android.graphics.Path().apply {
+        addCircle(CELL / 2, CELL / 2, RING_RADIUS, android.graphics.Path.Direction.CW)
     }
+
+    private val digits: Array<android.graphics.Path> = run {
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = lora
+            textAlign = Paint.Align.CENTER
+            textSize = CELL * ANSWER_SIZE
+            // variable font: weight from the wght axis (API 26+); 24-25 keep the regular cut
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) fontVariationSettings = "'wght' 600"
+        }
+        // centre on the bounds of all ten digits, so every digit sits on the same baseline
+        val bounds = Rect()
+        text.getTextBounds("0123456789", 0, 10, bounds)
+        val baseline = CELL / 2 - bounds.exactCenterY()
+        Array(9) { k ->
+            android.graphics.Path().also { text.getTextPath((k + 1).toString(), 0, 1, CELL / 2, baseline, it) }
+        }
+    }
+
+    fun digit(d: Int): android.graphics.Path? = digits.getOrNull(d - 1)
 }
 
 /**
@@ -125,38 +151,56 @@ fun GridOverlay(result: FrameResult?, modifier: Modifier = Modifier) {
 
         val steps = r.steps
         fun stepOf(i: Int) = steps?.get(i) ?: AnswerStep.DEEP
-        fun cellHeight(row: Int, u: Float) = (at(u, (row + 1f) / 9f) - at(u, row / 9f)).getDistance()
+        val canvas = drawContext.canvas.nativeCanvas
+
+        // Each cell gets the cell's own perspective (flat CELL x CELL square -> its 4
+        // corners on screen), so answers tilt and foreshorten with the paper like the
+        // printed digits do, instead of staying upright on the screen. Python's
+        // draw_solution does the same by unwarping a flat layer onto the photo.
+        val cellDst = FloatArray(8)
+        fun cellMatrix(i: Int): Float {
+            val row = i / 9
+            val col = i % 9
+            val pts = arrayOf(at(col / 9f, row / 9f), at((col + 1) / 9f, row / 9f),
+                at((col + 1) / 9f, (row + 1) / 9f), at(col / 9f, (row + 1) / 9f))
+            for (k in 0 until 4) { cellDst[2 * k] = pts[k].x; cellDst[2 * k + 1] = pts[k].y }
+            paints.matrix.setPolyToPoly(CELL_SQUARE, 0, cellDst, 0, 4)
+            // screen pixels per local unit at this cell (for stroke widths, which stay on screen)
+            return (pts[3] - pts[0]).getDistance() / CELL
+        }
 
         // cells whose ink might be the user's: a RING (a shape, not only a colour),
         // until the Check screen lets the user confirm them
         r.unsure?.forEachIndexed { i, unsure ->
             if (!unsure) return@forEachIndexed
-            val row = i / 9
-            val u = (i % 9 + 0.5f) / 9f
-            val cell = cellHeight(row, u)
-            drawUnsureRing(colors, stepOf(i), at(u, (row + 0.5f) / 9f), cell)
+            val px = cellMatrix(i)
+            val onPaper = stepOf(i) == AnswerStep.DEEP
+            paints.work.set(paints.ring)
+            paints.work.transform(paints.matrix)
+            val width = max(RING_WIDTH * px, 2.dp.toPx())
+            paints.stroke.strokeWidth = width + 2 * 1.5.dp.toPx()
+            paints.stroke.color = if (onPaper) 0xEBFFFFFF.toInt() else 0xCC000000.toInt() // 92% white / 80% black
+            canvas.drawPath(paints.work, paints.stroke)
+            paints.stroke.strokeWidth = width
+            paints.stroke.color = (if (onPaper) colors.unsureRing else colors.unsureRingOnDark).toArgb()
+            canvas.drawPath(paints.work, paints.stroke)
         }
 
         // the answers, drawn into each empty cell with the cell's own size and perspective
         val puzzle = r.puzzle ?: return@Canvas
         val solution = r.solution ?: return@Canvas
-        val canvas = drawContext.canvas.nativeCanvas
         for (i in 0 until 81) {
             if (puzzle[i] != 0) continue
-            val row = i / 9
-            val u = (i % 9 + 0.5f) / 9f
-            val center = at(u, (row + 0.5f) / 9f)
-            val textSize = cellHeight(row, u) * ANSWER_SIZE
+            val digit = paints.digit(solution[i]) ?: continue
+            val px = cellMatrix(i)
             val step = stepOf(i)
-            val text = solution[i].toString()
-            val y = center.y + textSize * paints.centreOffset
-            paints.halo.textSize = textSize
-            paints.halo.strokeWidth = 2f * textSize * HALO_PER_EM * colors.palette.haloScale
+            paints.work.set(digit)
+            paints.work.transform(paints.matrix)
+            paints.halo.strokeWidth = 2f * ANSWER_SIZE * CELL * HALO_PER_EM * colors.palette.haloScale * px
             paints.halo.color = colors.answerHalo(step).toArgb()
-            canvas.drawText(text, center.x, y, paints.halo)
-            paints.fill.textSize = textSize
+            canvas.drawPath(paints.work, paints.halo)
             paints.fill.color = colors.answer(step).toArgb()
-            canvas.drawText(text, center.x, y, paints.fill)
+            canvas.drawPath(paints.work, paints.fill)
         }
     }
 }
@@ -209,17 +253,6 @@ private fun DrawScope.drawBoxLines(style: OutlineStyle, at: (Float, Float) -> Of
             drawLine(style.color, from, to, w)
         }
     }
-}
-
-/** Unsure ring: amber, with a halo that contrasts with the cell (white on paper, black on screens). */
-private fun DrawScope.drawUnsureRing(colors: SudokuColors, step: AnswerStep, center: Offset, cell: Float) {
-    val onPaper = step == AnswerStep.DEEP
-    val ring = if (onPaper) colors.unsureRing else colors.unsureRingOnDark
-    val halo = if (onPaper) Color(0xEBFFFFFF) else Color(0xCC000000) // 92% white / 80% black
-    val radius = cell * 0.44f
-    val width = max(cell * 0.07f, 2.dp.toPx())
-    drawCircle(halo, radius, center, style = Stroke(width = width + 2 * 1.5.dp.toPx()))
-    drawCircle(ring, radius, center, style = Stroke(width = width))
 }
 
 /**

@@ -28,9 +28,12 @@ private val SOLUTION = Solver.parse(
 /** Slightly tilted grid in a 480x640 portrait frame. */
 private val CORNERS = floatArrayOf(52f, 150f, 432f, 138f, 440f, 520f, 44f, 530f)
 
+/** The same grid with the phone turned 30°, ordered the way GridDetector.orderCorners does. */
+private val CORNERS_TURNED = floatArrayOf(178f, 98f, 472f, 268f, 302f, 562f, 8f, 392f)
+
 private fun fake(state: ScanState, solved: Boolean, steps: Array<AnswerStep>? = null,
-                 unsure: BooleanArray? = null) = FrameResult(
-    corners = CORNERS, frameWidth = 480, frameHeight = 640, warped = null, sharpness = 140.0,
+                 unsure: BooleanArray? = null, corners: FloatArray = CORNERS) = FrameResult(
+    corners = corners, frameWidth = 480, frameHeight = 640, warped = null, sharpness = 140.0,
     digits = 26, processMs = 5, fps = 30.0, state = state,
     puzzle = if (solved) PUZZLE else null, solution = if (solved) SOLUTION else null,
     unsure = unsure, steps = steps,
@@ -114,3 +117,7 @@ private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean 
 @Preview(name = "Screen · Needs review", widthDp = 360, heightDp = 780)
 @Composable private fun SReview() = FullScreen(paper, fake(
     ScanState.NeedsReview(ScanState.Reason.TOO_FEW_DIGITS), solved = false))
+
+@Preview(name = "Solved, phone turned 30° (answers follow the cells)", widthDp = 360, heightDp = 780)
+@Composable private fun PTurned() = Stage(paper, fake(ScanState.Solved(0), solved = true,
+    steps = Array(81) { AnswerStep.DEEP }, unsure = BooleanArray(81) { it == 4 }, corners = CORNERS_TURNED))
