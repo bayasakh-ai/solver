@@ -129,8 +129,10 @@ fun AnswerDigit(
     step: AnswerStep,
     modifier: Modifier = Modifier,
     style: TextStyle = SudokuType.AnswerDigit,
+    palette: AnswerPalette? = null, // null = the theme's palette; set for Settings' swatches
 ) {
-    val colors = SudokuTheme.colors
+    val themed = SudokuTheme.colors
+    val colors = remember(palette, themed) { palette?.let { SudokuColors(it) } ?: themed }
     val haloPx = with(LocalDensity.current) { colors.answerHaloWidth().toPx() }
     val text = digit.toString()
     Box(modifier, contentAlignment = Alignment.Center) {

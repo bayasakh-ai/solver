@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -21,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,12 +30,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.bay.sudokusolver.ui.camera.DockedBar
 import com.bay.sudokusolver.ui.camera.GridOverlay
 import com.bay.sudokusolver.ui.camera.TopChrome
 import com.bay.sudokusolver.ui.camera.barContent
+import com.bay.sudokusolver.ui.settings.SettingsScreen
+import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
 import com.bay.sudokusolver.ui.theme.SudokuLensTheme
 import java.util.concurrent.ExecutorService
@@ -52,6 +58,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var analysisExecutor: ExecutorService
     private lateinit var classifier: DigitClassifier
     private var analyzer: FrameAnalyzer? = null
+    private lateinit var settings: SettingsStore
+    private var palette by mutableStateOf(AnswerPalette.DEFAULT)
+    private var debug by mutableStateOf(false)
+    private var showSettings by mutableStateOf(false)
     private var camera: Camera? = null
     private var previewView: PreviewView? = null
 
@@ -64,6 +74,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (!OpenCVLoader.initLocal()) error = "OpenCV failed to load"
         analysisExecutor = Executors.newSingleThreadExecutor()
+        settings = SettingsStore(this)
+        palette = settings.palette
+        debug = settings.debug
         classifier = DigitClassifier(this)
 
         hasCameraPermission = ContextCompat.checkSelfPermission(
@@ -72,7 +85,12 @@ class MainActivity : ComponentActivity() {
         if (!hasCameraPermission) requestPermission.launch(Manifest.permission.CAMERA)
 
         setContent {
-            SudokuLensTheme {
+            SudokuLensTheme(palette) {
+                // status bar icons: light over the camera, dark on the Settings page
+                val view = LocalView.current
+                SideEffect {
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = showSettings
+                }
                 if (hasCameraPermission) {
                     Box(Modifier.fillMaxSize()) {
                         AndroidView(
@@ -89,10 +107,16 @@ class MainActivity : ComponentActivity() {
                         val content = barContent(result, frozen != null, error,
                             onFreeze = ::toggleFreeze, onReset = ::resetScan)
                         CameraChrome {
-                            TopChrome(content, result, showDebug = true, thumbnail = result?.warped,
-                                onSettings = null, modifier = Modifier.align(Alignment.TopCenter))
+                            TopChrome(content, result, showDebug = debug, thumbnail = result?.warped,
+                                onSettings = { showSettings = true }, modifier = Modifier.align(Alignment.TopCenter))
                             DockedBar(content, flashOn = if (hasFlash) torchOn else null, onFlash = ::toggleTorch,
                                 modifier = Modifier.align(Alignment.BottomCenter))
+                        }
+                        if (showSettings) {
+                            BackHandler { showSettings = false }
+                            SettingsScreen(palette, debug,
+                                onPalette = ::choosePalette, onDebug = ::chooseDebug,
+                                onBack = { showSettings = false })
                         }
                     }
                 } else {
@@ -102,6 +126,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun choosePalette(p: AnswerPalette) {
+        palette = p
+        settings.palette = p
+        analyzer?.palette = p // steps are re-chosen from scratch on the next frame
+    }
+
+    private fun chooseDebug(on: Boolean) {
+        debug = on
+        settings.debug = on
     }
 
     /** Freeze keeps the current answers on a still; Live resumes the camera. */
@@ -153,6 +188,7 @@ class MainActivity : ComponentActivity() {
             val frameAnalyzer = FrameAnalyzer(classifier) { r ->
                 runOnUiThread { if (frozen == null) result = r } // frozen: keep the answers as they were
             }
+            frameAnalyzer.palette = palette
             analyzer = frameAnalyzer
             analysis.setAnalyzer(analysisExecutor, frameAnalyzer)
 

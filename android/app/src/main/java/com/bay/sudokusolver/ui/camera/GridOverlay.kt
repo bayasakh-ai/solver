@@ -117,7 +117,11 @@ fun GridOverlay(result: FrameResult?, modifier: Modifier = Modifier) {
         val side = (hypot(tr.x - tl.x, tr.y - tl.y) + hypot(br.x - tr.x, br.y - tr.y) +
             hypot(bl.x - br.x, bl.y - br.y) + hypot(tl.x - bl.x, tl.y - bl.y)) / 4f
 
-        r.state.gridOutline()?.let { drawGridOutline(colors.outline(it), side, ::at) }
+        r.state.gridOutline()?.let {
+            val style = colors.outline(it)
+            drawBoxLines(style, ::at)
+            drawGridOutline(style, side, ::at)
+        }
 
         val steps = r.steps
         fun stepOf(i: Int) = steps?.get(i) ?: AnswerStep.DEEP
@@ -186,6 +190,24 @@ private fun DrawScope.drawGridOutline(style: OutlineStyle, side: Float, at: (Flo
     } else {
         drawPath(quad(OUTSET, at), style.color, style = Stroke(
             width = w, cap = style.cap, join = StrokeJoin.Round, pathEffect = style.pathEffect(w)))
+    }
+}
+
+/**
+ * The two inner 3x3 box lines each way, thin and solid in the outline's colour over
+ * a thin dark halo. Kept on purpose (the owner's choice; the design drops them):
+ * they show the boxes line up with the paper. The state's pattern stays on the outer
+ * outline only, so dashed/dotted/double is read in one place.
+ */
+private fun DrawScope.drawBoxLines(style: OutlineStyle, at: (Float, Float) -> Offset) {
+    val w = 1.5.dp.toPx()
+    val halo = w + 2 * 1.dp.toPx()
+    for (k in 1..2) {
+        val f = k / 3f
+        for ((from, to) in listOf(at(f, 0f) to at(f, 1f), at(0f, f) to at(1f, f))) {
+            drawLine(style.halo, from, to, halo)
+            drawLine(style.color, from, to, w)
+        }
     }
 }
 

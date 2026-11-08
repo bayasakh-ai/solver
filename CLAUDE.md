@@ -116,6 +116,8 @@ architecture and rules.
   semibold serif, so they also differ from printed digits by weight and shape.
 - **Colorblind-safe by default — never color as the only signal.** Grid outline: dashed
   while reading, dotted on hold steady, solid when solved, double when it needs review.
+  The inner 3x3 box lines stay on the live overlay (owner's choice; the design drops
+  them): thin and solid in the outline's colour, the pattern only on the outer outline.
   Unsure cells: ring; corrected cells: underline. **Warnings are coral, always paired
   with a shape**; amber is the brand accent (buttons, reading outline, hint strokes).
 - **Palettes (measured, `AnswerInkTest`):** *Ink blue* (default) and *High contrast*.
@@ -239,6 +241,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
     ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
                        ScanChrome (status chip, docked bar, Freeze/Reset/flash), previews
+    ui/settings/       SettingsScreen (answer palette, debug thumbnail), SettingsStore
+                       (SharedPreferences; debug off by default)
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
