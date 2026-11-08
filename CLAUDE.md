@@ -224,7 +224,7 @@ Tests (status):
   model.tflite         current model (also copied into android/app/src/main/assets/)
 android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/java/com/bay/sudokusolver/
-    MainActivity.kt    camera setup, permission, Compose UI, GridOverlay (outline + answers)
+    MainActivity.kt    camera setup, permission, freeze/torch/reset, hosts the ui/camera screen
     FrameAnalyzer.kt   per-frame pipeline on the analysis thread, emits FrameResult
     GridDetector.kt    Kotlin port of grid.py
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81
@@ -236,9 +236,11 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        hysteresis), contrast + colour-vision maths (pure Kotlin)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
-                       Theme (SudokuLensTheme, CameraChrome, AnswerDigit), ThemePreview
+                       Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
+    ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
+                       ScanChrome (status chip, docked bar, Freeze/Reset/flash), previews
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
-                       (OFL; Lora reserves its name, so no static cuts). Licences in assets/licenses/
+                       (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/

@@ -75,3 +75,42 @@ private val shadow = Brush.horizontalGradient(
 @Preview(name = "Needs review · double", widthDp = 360, heightDp = 780)
 @Composable private fun PReview() = Stage(paper, fake(
     ScanState.NeedsReview(ScanState.Reason.NO_UNIQUE_SOLUTION), solved = false))
+
+/* Full screens: overlay + top chrome + docked bar, like the design's phone frames. */
+
+@Composable
+private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean = false, flash: Boolean? = false) {
+    SudokuLensTheme {
+        Box(Modifier.fillMaxSize().background(background)) {
+            GridOverlay(result, Modifier.fillMaxSize())
+            val content = barContent(result, frozen, error = null, onFreeze = {}, onReset = {})
+            com.bay.sudokusolver.ui.theme.CameraChrome {
+                TopChrome(content, result, showDebug = false, thumbnail = null, onSettings = {},
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter))
+                DockedBar(content, flashOn = flash, onFlash = {},
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+            }
+        }
+    }
+}
+
+@Preview(name = "Screen · Searching", widthDp = 360, heightDp = 780)
+@Composable private fun SSearching() = FullScreen(paper, null)
+
+@Preview(name = "Screen · Reading 3/5", widthDp = 360, heightDp = 780)
+@Composable private fun SReading() = FullScreen(paper, fake(ScanState.Reading(3, 5), solved = false))
+
+@Preview(name = "Screen · Hold steady", widthDp = 360, heightDp = 780)
+@Composable private fun SHold() = FullScreen(paper, fake(ScanState.HoldSteady(3, 5), solved = false))
+
+@Preview(name = "Screen · Solved", widthDp = 360, heightDp = 780)
+@Composable private fun SSolved() = FullScreen(paper, fake(ScanState.Solved(1), solved = true,
+    steps = Array(81) { AnswerStep.DEEP }))
+
+@Preview(name = "Screen · Solved, frozen, flash on, dark screen", widthDp = 360, heightDp = 780)
+@Composable private fun SFrozen() = FullScreen(screen, fake(ScanState.Solved(0), solved = true,
+    steps = Array(81) { AnswerStep.BRIGHT }), frozen = true, flash = true)
+
+@Preview(name = "Screen · Needs review", widthDp = 360, heightDp = 780)
+@Composable private fun SReview() = FullScreen(paper, fake(
+    ScanState.NeedsReview(ScanState.Reason.TOO_FEW_DIGITS), solved = false))

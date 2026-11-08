@@ -62,7 +62,28 @@ class FrameAnalyzer(
     /** Answer palette from Settings; read on the analysis thread each frame. */
     @Volatile var palette: AnswerPalette = AnswerPalette.DEFAULT
 
+    /** Reset button: start over on the next frame (applied on the analysis thread). */
+    fun requestReset() {
+        resetRequested = true
+    }
+
+    @Volatile private var resetRequested = false
+
+    private fun forgetPuzzle() {
+        smoothed = null
+        lastFound = null
+        tracker.reset()
+        solved = null
+        solvedFrom = null
+        ink = null
+        answerSteps.reset()
+    }
+
     override fun analyze(image: ImageProxy) {
+        if (resetRequested) {
+            resetRequested = false
+            forgetPuzzle()
+        }
         image.use { frame ->
             val start = System.nanoTime()
             val raw = yPlaneToMat(frame)
@@ -136,13 +157,7 @@ class FrameAnalyzer(
                 result = lastFound!!.copy(processMs = (now - start) / 1_000_000, fps = fps)
             } else {
                 // grid gone: forget this puzzle so the next one starts fresh
-                smoothed = null
-                lastFound = null
-                tracker.reset()
-                solved = null
-                solvedFrom = null
-                ink = null
-                answerSteps.reset()
+                forgetPuzzle()
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
                     (now - start) / 1_000_000, fps, ScanState.Searching)
             }
