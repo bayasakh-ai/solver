@@ -6,7 +6,7 @@ import sys
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, extract_cells, WARP_SIZE
+from grid import preprocess, find_grid, warp, extract_cells, looks_dark, WARP_SIZE
 from solver import solve, is_plausible
 
 
@@ -85,8 +85,11 @@ def show(grid):
 def process(img, model):
     """Full pipeline on one BGR image. Returns a dict; 'status' is one of:
     solved, no_grid, too_few_digits, unsolvable.
-    Handles dark mode (light digits on a dark background) by also trying the
-    inverted image. Dark-looking images try the inverted version first."""
+    Dark mode: the grid is searched in the image, then in its inversion if that
+    fails to solve (dark-looking images try the inverted one first). Either way
+    looks_dark() on the warped grid makes the cells dark-on-light before reading.
+    The Android app does the same per frame, one grid search per frame
+    (GridPolarity in Polarity.kt)."""
     inverted = 255 - img
     attempts = [img, inverted] if np.median(img) >= 110 else [inverted, img]
     first = None
@@ -106,6 +109,8 @@ def _process_once(img, model):
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
+    if looks_dark(warped):  # the cells decide, not the whole photo (shadows fool that)
+        warped = 255 - warped
     read, probs = read_digits(extract_cells(warped), model)
     result = {"read": read, "M": M}
     if not is_plausible(read):

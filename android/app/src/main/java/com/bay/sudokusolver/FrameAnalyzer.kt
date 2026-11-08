@@ -40,6 +40,7 @@ class FrameAnalyzer(
 ) : ImageAnalysis.Analyzer {
 
     private val tracker = PuzzleTracker()
+    private val polarity = GridPolarity()
     private var solved: SolveResult? = null
     private var solvedFrom: IntArray? = null // the consensus reading that was solved
 
@@ -57,9 +58,13 @@ class FrameAnalyzer(
             val gray = rotateUpright(raw, frame.imageInfo.rotationDegrees)
             if (gray !== raw) raw.release()
 
-            val th = GridDetector.preprocess(gray)
+            // dark mode: search in the polarity that worked last (one search per frame)
+            val searchedInverted = polarity.searchInverted
+            val source = if (searchedInverted) Mat().also { Core.bitwise_not(gray, it) } else gray
+            val th = GridDetector.preprocess(source)
             val corners = GridDetector.findGrid(th)
             th.release()
+            if (corners == null) polarity.onMiss()
 
             frames++
             val now = System.nanoTime()
@@ -71,9 +76,15 @@ class FrameAnalyzer(
 
             val result: FrameResult
             if (corners != null) {
-                val (warped, m) = GridDetector.warp(gray, corners)
+                val (warped, m) = GridDetector.warp(source, corners)
                 m.release()
-                val sharp = sharpness(warped)
+                val pixels = ByteArray(warped.rows() * warped.cols())
+                warped.get(0, 0, pixels)
+                // the cells decide: digits must be dark-on-light for binarize + the model
+                if (polarity.onFound(searchedInverted, Polarity.looksDark(pixels, warped.cols()))) {
+                    Core.bitwise_not(warped, warped)
+                }
+                val sharp = sharpness(warped) // Laplacian variance: same either polarity
                 val cells = GridDetector.extractCells(warped)
                 val digits = cells.count { it != null }
                 val thumb = toBitmap(warped, 225)
@@ -103,6 +114,7 @@ class FrameAnalyzer(
                 result = FrameResult(null, gray.cols(), gray.rows(), null, 0.0, 0,
                     (now - start) / 1_000_000, fps, "Point the camera at a sudoku")
             }
+            if (source !== gray) source.release()
             gray.release()
             onResult(result)
         }

@@ -165,6 +165,36 @@ def warp(gray, corners, size=WARP_SIZE):
     return cv2.warpPerspective(gray, M, (size, size)), M
 
 
+def looks_dark(warped):
+    """Dark mode check on the flattened grid: light digits on a dark background?
+    Each cell votes on its own: is its ink the dark tail of its pixels (paper) or
+    the bright tail (dark mode)? Per cell because a hard shadow makes half a paper
+    page darker than 110, which fooled the old whole-image median rule.
+    Mirrored 1:1 by Polarity.looksDark in Kotlin (same 'lower' percentile rule);
+    export_polarity_cases.py + PolarityParityTest check they agree."""
+    light, dark = cell_votes(warped)
+    return dark > light
+
+
+def cell_votes(warped, margin=5, min_spread=20):
+    """(cells with dark ink on light, cells with light ink on dark). Flat cells don't vote."""
+    step = warped.shape[0] // 9
+    light = dark = 0
+    for r in range(9):
+        for c in range(9):
+            cell = warped[r * step + margin:(r + 1) * step - margin,
+                          c * step + margin:(c + 1) * step - margin]
+            p2, med, p98 = np.percentile(cell, [2, 50, 98], method="lower")
+            below, above = int(med) - int(p2), int(p98) - int(med)
+            if max(below, above) < min_spread:
+                continue  # flat (empty) cell: no evidence
+            if below > above:
+                light += 1
+            else:
+                dark += 1
+    return light, dark
+
+
 def clean_cell(cell, out=DIGIT_SIZE):
     """Binary cell (white ink on black) -> centered out x out digit, or None if empty.
     The SAME function is used when generating training data, so inputs match."""

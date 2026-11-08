@@ -110,8 +110,7 @@ Screens designed in Claude Design (now inside Claude as artifacts), implemented 
 
 ## Roadmap
 
-1. **Now:** real-world test session (see Current status), then fix what it reveals;
-   port dark-mode inversion to Kotlin.
+1. **Now:** real-world test session (see Current status), then fix what it reveals.
 2. **v1:** scan → auto-capture → check/tap-to-fix → solution / play with progressive,
    animated hints. Live AR mode kept.
 3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
@@ -135,6 +134,7 @@ Screens designed in Claude Design (now inside Claude as artifacts), implemented 
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
+  export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   model.tflite         current model (also copied into android/app/src/main/assets/)
 android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/java/com/bay/sudokusolver/
@@ -143,8 +143,10 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     GridDetector.kt    Kotlin port of grid.py
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81
     PuzzleReader.kt    PuzzleTracker (frame voting) + SelfCorrect
+    Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
     Solver.kt          Kotlin port of solver.py
-  app/src/test/        SolverTest, SelfCorrectTest (plain JVM, no phone)
+  app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest
+                       (plain JVM, no phone; resources/polarity/ from export_polarity_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
 ```
 
@@ -166,7 +168,7 @@ data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressC
    cell-lattice fallback: square holes of similar size, BFS to assign (col,row),
    homography fit -> rough corners -> `refineEdges` snaps each edge to the strongest
    line via projection profiles. Corners ordered TL, TR, BR, BL.
-4. `warp` to 450x450 (50 px cells).
+4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
 5. `extractCells`: `binarize` (adaptiveThreshold 21, 10) -> `cleanCell` -> 28x28
    centred digit or null (empty).
 6. Model -> 9 probabilities per filled cell.
@@ -190,8 +192,14 @@ data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressC
 - **Cell-lattice fallback + edge snapping** exists because page rules and text often
   touch the grid border (real newspaper photo). Dilate 3x3 first so thin grid lines
   with tiny gaps don't merge cells.
-- **Dark mode**: Python `process()` retries with the inverted image. NOT yet ported to
-  Kotlin.
+- **Dark mode = per-cell vote on the warped grid** (`looks_dark` / `Polarity.looksDark`):
+  each cell asks whether its ink is the dark or bright tail of its pixels; inverted if
+  most say bright. A whole-image median < 110 was wrong on 12/20 hard-shadow photos;
+  the vote was 0/164 wrong across all conditions. Grid search polarity is separate:
+  Python tries image then inversion; Kotlin (`GridPolarity`) searches ONE polarity per
+  frame (last that worked, flip after a miss) to keep the 5 ms budget. Bonus: blurred
+  paper grids are found far more often in the inverted image (19/20 vs 9/20), so blur
+  went 30% -> 70% once the cells were flipped back.
 - **TFLite batch is fixed at 81.** Resizing the input per frame desynced the output
   shape and crashed (`[24, 9]` vs `[23, 9]`). Never call `resizeInput` per frame.
 - **Sharpness is measured inside the warped grid only** — a blank wall scores ~11
@@ -213,6 +221,7 @@ python evaluate.py --synth 20             # synthetic stress test
 python evaluate.py photos/                # real photos with .txt truths
 python run.py photo.jpg                   # single photo -> photo_solved.jpg
 python export_test_cells.py
+python export_polarity_cases.py           # after changing looks_dark / cell_votes
 ```
 
 After retraining, ALWAYS update the app:
@@ -251,7 +260,21 @@ For handwriting later, extend the truth format to mark user entries separately.
 
 - Synthetic (Mac, 200 images): 92% total. clean/tilt/rotate/glare/jpeg/dark_mode/
   touching_lines ~100%, shadow 95%, low_res 95%, **blur 30%** (grid not found).
-- Real photos: 3/3 newspaper photos solve.
+- Synthetic (Windows, seed 0, after per-cell dark-mode vote): 95% total. clean/rotate/
+  glare/jpeg/dark_mode/touching_lines 100%, tilt 95%, shadow 95%, low_res 90%,
+  **blur 70%** (6 no_grid). Before the vote on the same machine: 91%, blur 30%.
+- Real photos (in git: puzzle1-3.jpg, no .txt truths yet): **2 of 3 solve.**
+  puzzle2 and puzzle3 are blank newspaper puzzles and solve (puzzle2 with one
+  self-correction). puzzle1 is a *completed* puzzle — 25 printed digits + 56 in red
+  pen — and is unsolvable today. Stage by stage (checked 2026-11-08 against a hand
+  transcription): grid, warp and polarity correct; printed digits 25/25 at confidence
+  1.00; pen digits 36/56 right, 19 misread, 1 missed (the r2c7 "7" crosses into the
+  next cell). That's 20 errors; self_correct allows 2. The model has only ever seen
+  printed fonts, and it is confidently wrong on pen (3 misreads at 100%: 1->7, 4->9).
+  Reading only the printed cells solves it and matches the pen answers. So puzzle1
+  is the first handwriting (v1.1) test case, not a scanner bug. (An older "3/3"
+  claim likely counted a puzzle4.jpg that isn't in the repo; only an ignored
+  puzzle4_solved.jpg output exists.)
 - Android: 30 fps, ~5 ms grid finding, answers appear in ~1-2 s, self-correction fixes
   misreads live. Tested mostly on a computer screen so far.
 - Next real-world test session: paper, bad light/shadow/glare, steep angles, small
