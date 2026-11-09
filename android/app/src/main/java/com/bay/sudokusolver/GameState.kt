@@ -197,11 +197,11 @@ data class FinishSummary(val elapsedMs: Long, val hintsUsed: Int, val mistakes: 
     val time: String get() = formatTime(elapsedMs)
     val hints: String get() = if (hintsUsed == 0) "No hints" else if (hintsUsed == 1) "1 hint" else "$hintsUsed hints"
     val mistakesText: String get() = if (mistakes == 0) "No mistakes" else if (mistakes == 1) "1 mistake" else "$mistakes mistakes"
-    /** A line under "Solved!": praise only what was earned. */
-    val line: String get() = when {
+    /** A line under "Solved!": praise only what was earned; null = nothing to add. */
+    val line: String? get() = when {
         hintsUsed == 0 && mistakes == 0 -> "Clean solve: no hints, no mistakes."
         hintsUsed == 0 -> "Solved without hints."
-        else -> "Solved."
+        else -> null
     }
 }
 

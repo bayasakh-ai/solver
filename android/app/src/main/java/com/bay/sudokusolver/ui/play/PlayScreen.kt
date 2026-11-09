@@ -474,15 +474,16 @@ private fun FinishDialog(summary: FinishSummary, onClose: () -> Unit, onScanAnot
             }
             Column(Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Solved!", style = MaterialTheme.typography.displaySmall)
-                Text(summary.line, style = MaterialTheme.typography.bodyMedium, color = Classical.TextBody2)
+                summary.line?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Classical.TextBody2) }
                 Row(Modifier.fillMaxWidth().border(1.dp, Classical.Divider, MaterialTheme.shapes.small).padding(vertical = 12.dp)) {
                     FinishFact(LucideIcons.Clock, "Time", summary.time, Modifier.weight(1f))
                     FinishFact(LucideIcons.Lightbulb, "Hints", summary.hints, Modifier.weight(1f))
                     FinishFact(LucideIcons.AlertCircle, "Mistakes", summary.mistakesText, Modifier.weight(1f))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FlowButton("Scan another", onScanAnother, Modifier.weight(1f), icon = LucideIcons.Camera)
-                    FlowButton("Play another", onPlayAnother, Modifier.weight(1f), icon = LucideIcons.Grid, primary = true)
+                // stacked: side by side, the labels wrapped to two lines on a 390 dp phone
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowButton("Play another", onPlayAnother, Modifier.fillMaxWidth(), icon = LucideIcons.Grid, primary = true)
+                    FlowButton("Scan another", onScanAnother, Modifier.fillMaxWidth(), icon = LucideIcons.Camera)
                 }
             }
         }
