@@ -208,7 +208,7 @@ architecture and rules.
     flag reopens the board itself. An unreadable save is never deleted (a format bug
     must not wipe a game). Check isn't kept (photo too big; rescanning is quick).
     Tested on the phone (2026-11-09): force-stop (= Android Studio's Terminate), swipe
-    from Recents, background `am kill`: board, notes, hints, mistakes, timer, undo all
+    from Recents, background `am kill`, phone restart (owner): board, notes, hints, mistakes, timer, undo all
     back. Found on the way: this Samsung's SharedPreferences returns the string with
     trailing spaces, so `decode` trims lines.
 
