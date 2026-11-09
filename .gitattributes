@@ -1,0 +1,22 @@
+# Line endings: the same on Windows and Mac, whatever core.autocrlf each machine has.
+# Text files are stored AND checked out with LF. Python, Kotlin, Gradle and Android
+# Studio all handle LF on Windows, and scripts/tests that parse text (truth files,
+# test resources) see the same bytes on every machine.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run in cmd.exe
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary: never converted, never diffed as text
+*.png binary
+*.jpg binary
+*.JPG binary
+*.jpeg binary
+*.webp binary
+*.ttf binary
+*.tflite binary
+*.bin binary
+*.jar binary
+*.npz binary
+*.keras binary
