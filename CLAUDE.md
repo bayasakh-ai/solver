@@ -135,7 +135,38 @@ architecture and rules.
   fixing a cell, Choose, Play board, progressive hints and the advanced-technique
   fallback. In them printed digits are regular sans, the player's digits semibold serif.
   Still to design: Next hint at level 3, naked-single / last-empty-cell examples,
-  finished puzzle and mistakes-count states.
+  finished puzzle and mistakes-count states (built simply for now, see below).
+- **Core flow built (Stage 3, 2026-11-09)**: Check (Reading/Photo, tap-to-fix picker),
+  Choose, Play with progressive hints. Decisions taken without a design:
+  - **Low-confidence ring: top probability < 0.95** (`CheckSession.LOW_CONFIDENCE`,
+    measurement in its comment: real photos' right readings >= 0.976, wrong 0.944/0.721;
+    synthetic 0.95 rings 7/7 wrong and 0.21% of right ones). Re-check after the
+    real-world session. Corrected cells are underlined, never also ringed.
+  - Picker's dashed key: the second guess (low confidence), Empty (ink may be the
+    user's), or the original reading (self-corrected).
+  - After the user edits a cell, Looks right solves the grid **exactly**: no more
+    self-correction once a person has looked at it. No unique solution -> stays on
+    Check and says why.
+  - **Difficulty** (4 dots) = hardest step singles need: Easy (last empty cell, hidden
+    single in a box), Medium (hidden single in a row/column), Tricky (naked single),
+    Hard (advanced). puzzle3 = Hard.
+  - **Show solution** opens the board read-only: printed digits ink sans, answers in the
+    answer colour, semibold serif, with a legend. It doesn't touch a game in progress.
+  - **Game board settings** (Settings -> Game board, `BoardSettings`): error counter
+    (default **off**: it reveals that a digit is wrong), timer, highlight conflicts
+    (rules only: a repeated digit gets a coral inset frame, never the answer), row and
+    column, box, identical numbers (all on by default).
+  - Mistakes = wrong digits when entered; undo/erase don't remove them. Placing a
+    digit clears that note from its peers. Finished = header "Solved", keypad off.
+  - Hints use printed + correct entries and never target a filled cell; if only a wrong
+    entry blocks them: "A digit you entered doesn't fit" with the count, not the place.
+  - Level 3 -> Keep playing writes the digit. Naked single / last empty cell reuse the
+    hidden-single marks (frame, rings, glow, write). Animations off -> still frame.
+  - Player digits use Cormorant **lining figures** (`lnum`): its old-style default drops
+    3/5/7/9 below the line.
+  - Frame analysis pauses while a full-screen page covers the camera; the game clock
+    runs only while the app is in front.
+  - Not yet: saving a game across process death, the puzzle library (v1.1).
 
 ---
 
@@ -246,20 +277,31 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
     Capture.kt         hand-off from the scan to Check: read vs fixed digits, confidence,
                        second guess, unsure ink, pen count, solution (pure Kotlin)
-    Route.kt           Route (Camera / Settings / Check) + NavStack, camera always root (pure Kotlin)
+    Route.kt           Route (Camera / Settings / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
+    Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
+    CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
+    HintEngine.kt      hints as data (last empty cell, hidden/naked single, advanced fallback),
+                       difficulty rating (pure Kotlin)
+    GameState.kt       Puzzle, BoardSettings, the board: entries, notes, undo, mistakes,
+                       conflicts, hints used, time (pure Kotlin)
     Orientation.kt     corner order, quarter-turn choice, corner tracking, lock (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
                        Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
     ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
                        ScanChrome (status chip, docked bar, Play/Freeze/Reset/flash), previews
-    ui/check/          CheckScreen: Stage 2 stub (read-only grid, counts); Stage 3 builds the design
-    ui/settings/       SettingsScreen (answer palette, debug thumbnail), SettingsStore
+    ui/board/          shared SudokuGrid, flow header, outlined buttons
+    ui/check/          CheckScreen (Reading/Photo, fix sheet), GridPhoto (flattened colour still, OpenCV)
+    ui/choose/         ChooseScreen (difficulty, three ways to play)
+    ui/play/           PlayScreen (board, keypad, hint sheet, Show solution), HintOverlay (hint marks
+                       + Show me keyframes)
+    ui/settings/       SettingsScreen (answer palette, game board, debug thumbnail), SettingsStore
                        (SharedPreferences; debug off by default)
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
-                       OrientationTest, CaptureTest, RouteTest
+                       OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
+                       GameStateTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
@@ -269,9 +311,14 @@ Package: `com.bay.sudokusolver`. Screen locked to portrait.
 Dependencies: CameraX 1.6.2, OpenCV `org.opencv:opencv:4.12.0`, LiteRT
 `com.google.ai.edge.litert:litert:1.4.0` (classic `org.tensorflow.lite.Interpreter` API).
 
-Planned new pure-logic files (no Android imports): `HintEngine.kt` (techniques, hint
-data, difficulty), `GameState.kt` (board, user entries, notes, undo), `ProgressChecker.kt`
-(compare user digits to solution, confidence rules).
+Planned pure-logic file (no Android imports): `ProgressChecker.kt` (compare the user's
+handwritten digits to the solution, confidence rules; v1.1). `HintEngine.kt` and
+`GameState.kt` exist since Stage 3.
+
+Viewing a screen without a camera: the debug build includes Compose's PreviewActivity,
+`adb shell am start -n com.bay.sudokusolver/androidx.compose.ui.tooling.PreviewActivity
+--es composable com.bay.sudokusolver.ui.play.PlayScreenKt.PPlayInteractive` (force-stop
+the app between previews; it reuses the running one).
 
 ---
 

@@ -2,8 +2,8 @@ package com.bay.sudokusolver
 
 /**
  * Which screen is showing. The camera is always the root; everything else opens over
- * it, so a solved puzzle is still there on return. Stage 3 adds Choose and Play here
- * (design/screens/flow). Pure Kotlin (no Android imports) so it moves to the shared
+ * it, so a solved puzzle is still there on return. The core flow is
+ * Check -> Choose -> Play (design/screens/flow). Pure Kotlin (no Android imports) so it moves to the shared
  * iOS module; MainActivity only renders [NavStack.current].
  */
 sealed interface Route {
@@ -15,7 +15,15 @@ sealed interface Route {
 
     /** Check the reading after a capture: from Play on Solved, or Check the reading on Needs review. */
     data class Check(val capture: Capture) : Route
+
+    /** Puzzle ready: difficulty and the three ways to play. */
+    data class Choose(val puzzle: Puzzle) : Route
+
+    /** The digital board. [mode] SOLUTION shows every answer, read-only. */
+    data class Play(val puzzle: Puzzle, val mode: PlayMode) : Route
 }
+
+enum class PlayMode { HINTS, MYSELF, SOLUTION }
 
 /** Back stack with the camera at the bottom. Immutable: each change returns a new stack. */
 data class NavStack(val stack: List<Route> = listOf(Route.Camera)) {

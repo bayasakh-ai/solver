@@ -99,6 +99,13 @@ data class SudokuColors(
     val gridBoxLine: Color = Classical.Ink,
     val gridCellLine: Color = Ramp.Neutral500,
     val printedDigit: Color = Classical.Ink,
+    val gridThinLine: Color = Color(0x33201F1D),    // 20% ink
+    // Play board (design/screens/flow/Play.dc.html)
+    val selectedCell: Color = Ramp.Accent100,       // selected cell + same digit
+    val peerCell: Color = Color(0xFFEEECE9),        // selected cell's row / column / box
+    val dimCell: Color = Color(0x17201F1D),         // outside a hint's focus (9%)
+    /** Clashing digits: coral, with an inset frame so it isn't colour alone. */
+    val conflict: Color = rgb(SignalColors.WARNING_PAPER),
 ) {
     fun answer(step: AnswerStep): Color = rgb(palette.color(step))
     fun answerHalo(step: AnswerStep): Color = rgb(palette.halo(step))

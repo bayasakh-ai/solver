@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bay.sudokusolver.AnswerPalette
 import com.bay.sudokusolver.AnswerStep
+import com.bay.sudokusolver.BoardSettings
 import com.bay.sudokusolver.ui.theme.AnswerDigit
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
@@ -46,7 +47,7 @@ import com.bay.sudokusolver.ui.theme.Ramp
 import com.bay.sudokusolver.ui.theme.SudokuLensTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 
-/* Settings (design v2, "Settings"): answer palette and the debug thumbnail. */
+/* Settings (design v2, "Settings"): answer palette, game board helpers and the debug thumbnail. */
 
 private data class PaletteInfo(val name: String, val note: String?, val recommended: Boolean)
 
@@ -59,8 +60,10 @@ private fun info(p: AnswerPalette) = when (p) {
 fun SettingsScreen(
     palette: AnswerPalette,
     debug: Boolean,
+    board: BoardSettings,
     onPalette: (AnswerPalette) -> Unit,
     onDebug: (Boolean) -> Unit,
+    onBoard: (BoardSettings) -> Unit,
     onBack: () -> Unit,
 ) {
     // Surface blocks touches, so nothing reaches the camera screen underneath
@@ -97,7 +100,34 @@ fun SettingsScreen(
                 }
             }
 
-            DebugRow(debug, onDebug, Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp))
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Game board", style = MaterialTheme.typography.titleLarge)
+                Text("Help while you play on the phone.", style = MaterialTheme.typography.bodyMedium, color = Classical.TextBody2)
+            }
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                val rows = listOf(
+                    Triple("Error counter", "Counts digits that don’t match the solution. Off by default: it tells you a digit is wrong.",
+                        board.showMistakes) to { v: Boolean -> board.copy(showMistakes = v) },
+                    Triple("Timer", "Time spent on the puzzle, paused while the app is in the background.",
+                        board.showTimer) to { v: Boolean -> board.copy(showTimer = v) },
+                    Triple("Highlight conflicts", "Frames a digit that repeats in its row, column or box.",
+                        board.highlightConflicts) to { v: Boolean -> board.copy(highlightConflicts = v) },
+                    Triple("Highlight row and column", "Tints the selected cell’s row and column.",
+                        board.highlightLines) to { v: Boolean -> board.copy(highlightLines = v) },
+                    Triple("Highlight box", "Tints the selected cell’s 3×3 box.",
+                        board.highlightBox) to { v: Boolean -> board.copy(highlightBox = v) },
+                    Triple("Highlight identical numbers", "Marks every cell with the selected digit.",
+                        board.highlightSame) to { v: Boolean -> board.copy(highlightSame = v) },
+                )
+                for ((info, change) in rows) {
+                    ToggleRow(info.first, info.second, info.third, { onBoard(change(it)) }, Modifier)
+                    HorizontalDivider(color = Classical.Ink.copy(alpha = 0.14f))
+                }
+            }
+
+            Text("Camera", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp))
+            ToggleRow("Debug thumbnail", "Shows the flattened grid and frame stats over the camera.", debug, onDebug,
+                Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp))
         }
     }
 }
@@ -145,17 +175,16 @@ private fun Swatch(palette: AnswerPalette, step: AnswerStep, background: Color) 
 }
 
 @Composable
-private fun DebugRow(on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier) {
+private fun ToggleRow(title: String, text: String, on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier) {
     Row(
-        modifier.fillMaxWidth().heightIn(min = 76.dp)
+        modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 10.dp)
             .toggleable(value = on, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("Debug thumbnail", style = MaterialTheme.typography.titleMedium)
-            Text("Shows the flattened grid and frame stats over the camera.",
-                style = MaterialTheme.typography.bodySmall, color = Classical.TextSecondary)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = Classical.TextSecondary)
         }
         // the word says the state too, not only the knob position and colour
         Text(if (on) "On" else "Off", style = MaterialTheme.typography.labelMedium,
@@ -174,11 +203,11 @@ private fun DebugRow(on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifie
     }
 }
 
-@Preview(name = "Settings", widthDp = 360, heightDp = 780)
+@Preview(name = "Settings", widthDp = 360, heightDp = 1400)
 @Composable
 private fun SettingsPreview() {
     SudokuLensTheme {
-        SettingsScreen(AnswerPalette.INK_BLUE, debug = false, onPalette = {}, onDebug = {}, onBack = {})
+        SettingsScreen(AnswerPalette.INK_BLUE, debug = false, board = BoardSettings(), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
     }
 }
 
@@ -186,6 +215,6 @@ private fun SettingsPreview() {
 @Composable
 private fun SettingsPreviewHc() {
     SudokuLensTheme(AnswerPalette.HIGH_CONTRAST) {
-        SettingsScreen(AnswerPalette.HIGH_CONTRAST, debug = true, onPalette = {}, onDebug = {}, onBack = {})
+        SettingsScreen(AnswerPalette.HIGH_CONTRAST, debug = true, board = BoardSettings(showMistakes = true), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
     }
 }

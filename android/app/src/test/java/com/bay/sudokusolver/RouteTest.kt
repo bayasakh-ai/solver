@@ -37,6 +37,16 @@ class RouteTest {
         assertEquals(NavStack(), NavStack().open(Route.Settings).open(Route.Check(capture)).open(Route.Camera))
     }
 
+    @Test fun theCoreFlowStacksCheckChoosePlay() {
+        val puzzle = Puzzle(Solver.parse("005031040001000008794600000002000003900000005300000800000003517500000600070820900"),
+            Solver.parse("685731249231549768794682351462958173918376425357214896829463517543197682176825934"))
+        val play = NavStack().open(Route.Check(capture)).open(Route.Choose(puzzle)).open(Route.Play(puzzle, PlayMode.HINTS))
+        assertEquals(4, play.stack.size)
+        assertEquals(Route.Choose(puzzle), play.back()!!.current)
+        // a puzzle with the same digits is the same route (Puzzle compares by content)
+        assertSame(play, play.open(Route.Play(Puzzle(puzzle.givens.copyOf(), puzzle.solution.copyOf()), PlayMode.HINTS)))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun theCameraIsAlwaysTheRoot() {
         NavStack(listOf(Route.Settings))

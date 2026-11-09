@@ -56,4 +56,25 @@ object LucideIcons {
     val ArrowLeft = icon("arrow-left", "m12 19-7-7 7-7", "M19 12H5")
     val ChevronLeft = icon("chevron-left", "m15 18-6-6 6-6")
     val X = icon("x", "M18 6 6 18", "M6 6l12 12")
+
+    // core flow (design/screens/flow)
+    val ArrowRight = icon("arrow-right", "M5 12h14", "m12 5 7 7-7 7")
+    val ChevronRight = icon("chevron-right", "m9 18 6-6-6-6")
+    val Lightbulb = icon("lightbulb",
+        "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5",
+        "M9 18h6", "M10 22h4")
+    val Eye = icon("eye",
+        "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+        "M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0")
+    val Undo = icon("undo-2", "M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11")
+    val Eraser = icon("eraser",
+        "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
+        "M22 21H7", "m5 11 9 9")
+    val Clock = icon("clock", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 6v6l4 2")
+    val Grid = icon("grid-3x3",
+        "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z",
+        "M3 9h18", "M3 15h18", "M9 3v18", "M15 3v18")
+    val PenOff = icon("pen-off",
+        "m10 10-6.157 6.162a2 2 0 0 0-.5.833l-1.322 4.36a.5.5 0 0 0 .622.624l4.358-1.323a2 2 0 0 0 .83-.5L14 13.982",
+        "m12.829 7.172 4.359-4.346a1 1 0 1 1 3.986 3.986l-4.353 4.353", "m15 5 4 4", "m2 2 20 20")
 }

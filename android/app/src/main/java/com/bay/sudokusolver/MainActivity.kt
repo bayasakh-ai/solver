@@ -22,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,9 @@ import com.bay.sudokusolver.ui.camera.GridOverlay
 import com.bay.sudokusolver.ui.camera.TopChrome
 import com.bay.sudokusolver.ui.camera.barContent
 import com.bay.sudokusolver.ui.check.CheckScreen
+import com.bay.sudokusolver.ui.check.GridPhoto
+import com.bay.sudokusolver.ui.choose.ChooseScreen
+import com.bay.sudokusolver.ui.play.PlayScreen
 import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
@@ -64,8 +68,16 @@ class MainActivity : ComponentActivity() {
     private var debug by mutableStateOf(false)
     /** Which screen shows; the camera stays underneath (see Route.kt). */
     private var nav by mutableStateOf(NavStack())
-    /** Freeze state before Check opened, restored when it closes. */
+    /** Freeze state before Check opened, restored when the flow returns to the camera. */
     private var frozenBeforeCheck: Bitmap? = null
+    // core flow (Route.kt): the reading being checked, its photo, and the game in progress
+    private var checkSession by mutableStateOf<CheckSession?>(null)
+    private var checkPhoto by mutableStateOf<Bitmap?>(null)
+    private var game by mutableStateOf<GameState?>(null)
+    private var board by mutableStateOf(BoardSettings())
+    /** The app is in front: the game clock only runs then. */
+    private var inFront by mutableStateOf(false)
+    private var analysis: ImageAnalysis? = null
     private var camera: Camera? = null
     private var previewView: PreviewView? = null
 
@@ -81,6 +93,7 @@ class MainActivity : ComponentActivity() {
         settings = SettingsStore(this)
         palette = settings.palette
         debug = settings.debug
+        board = settings.board
         classifier = DigitClassifier(this)
 
         hasCameraPermission = ContextCompat.checkSelfPermission(
@@ -95,6 +108,8 @@ class MainActivity : ComponentActivity() {
                 SideEffect {
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !nav.onCamera
                 }
+                // the full-screen flow pages cover the camera: stop reading frames under them
+                LaunchedEffect(nav.onCamera) { setAnalyzing(nav.onCamera) }
                 if (hasCameraPermission) {
                     Box(Modifier.fillMaxSize()) {
                         AndroidView(
@@ -119,9 +134,23 @@ class MainActivity : ComponentActivity() {
                         if (!nav.onCamera) BackHandler(onBack = ::goBack)
                         when (val route = nav.current) {
                             Route.Camera -> Unit
-                            Route.Settings -> SettingsScreen(palette, debug,
-                                onPalette = ::choosePalette, onDebug = ::chooseDebug, onBack = ::goBack)
-                            is Route.Check -> CheckScreen(route.capture, onBack = ::goBack)
+                            Route.Settings -> SettingsScreen(palette, debug, board,
+                                onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard, onBack = ::goBack)
+                            is Route.Check -> checkSession?.let { session ->
+                                CheckScreen(session, checkPhoto,
+                                    onEdit = { i, d -> checkSession = session.edit(i, d) },
+                                    onBack = ::goBack, onRescan = ::rescanFromCheck, onConfirm = ::confirmReading)
+                            }
+                            is Route.Choose -> ChooseScreen(route.puzzle,
+                                resumable = game?.let { it.puzzle == route.puzzle && it.canUndo } == true,
+                                onPlay = { mode -> play(route.puzzle, mode) }, onBack = ::goBack, onCamera = ::backToCamera)
+                            is Route.Play -> PlayScreen(
+                                game = game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle),
+                                mode = route.mode, settings = board, running = inFront,
+                                update = { f -> game = f(game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle)) },
+                                onBack = ::goBack,
+                                onSettings = { nav = nav.open(Route.Settings) },
+                                onPlayInstead = { nav = nav.back()!!; play(route.puzzle, PlayMode.HINTS) })
                         }
                     }
                 } else {
@@ -144,6 +173,11 @@ class MainActivity : ComponentActivity() {
         settings.debug = on
     }
 
+    private fun chooseBoard(b: BoardSettings) {
+        board = b
+        settings.board = b
+    }
+
     /** Freeze keeps the current answers on a still; Live resumes the camera. */
     private fun toggleFreeze() {
         if (frozen != null) {
@@ -158,16 +192,65 @@ class MainActivity : ComponentActivity() {
      * freezes underneath, so Back returns to the same answers.
      */
     private fun openCheck() {
-        val capture = result?.capture ?: return
+        val r = result ?: return
+        val capture = r.capture ?: return
         frozenBeforeCheck = frozen
         if (frozen == null) frozen = previewView?.bitmap
+        // same reading as last time (Back, then Play again): keep the user's fixes
+        if (checkSession?.capture !== capture) {
+            checkSession = CheckSession(capture)
+            checkPhoto = frozen?.let { still -> r.corners?.let { GridPhoto.flatten(still, it, r.frameWidth, r.frameHeight) } }
+        }
         nav = nav.open(Route.Check(capture))
+    }
+
+    /** Looks right: on to Choose when the fixed grid is a puzzle; otherwise Check says why. */
+    private fun confirmReading(): CheckResult {
+        val r = checkSession?.confirm() ?: return CheckResult.TooFew
+        if (r is CheckResult.Ready) nav = nav.open(Route.Choose(r.puzzle))
+        return r
+    }
+
+    /** Choose -> Play. The game in progress for this puzzle carries on; Show solution doesn't touch it. */
+    private fun play(puzzle: Puzzle, mode: PlayMode) {
+        if (mode != PlayMode.SOLUTION && game?.puzzle != puzzle) game = GameState(puzzle)
+        nav = nav.open(Route.Play(puzzle, mode))
     }
 
     private fun goBack() {
         val leaving = nav.current
         nav = nav.back() ?: return
         if (leaving is Route.Check) frozen = frozenBeforeCheck
+    }
+
+    /** "Back to the camera for live answers": the frozen answers, as they were. */
+    private fun backToCamera() {
+        nav = NavStack()
+        frozen = frozenBeforeCheck
+    }
+
+    private fun rescanFromCheck() {
+        nav = NavStack()
+        checkSession = null
+        checkPhoto = null
+        resetScan()
+    }
+
+    /** Pause frame analysis while a full-screen page covers the camera; resume on return. */
+    private fun setAnalyzing(on: Boolean) {
+        val a = analysis ?: return
+        val fa = analyzer ?: return
+        if (on) a.setAnalyzer(analysisExecutor, fa) else a.clearAnalyzer()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        inFront = true
+    }
+
+    override fun onPause() {
+        inFront = false
+        super.onPause()
     }
 
     /** Reset / Rescan: forget the puzzle and start reading again. */
@@ -212,7 +295,8 @@ class MainActivity : ComponentActivity() {
             }
             frameAnalyzer.palette = palette
             analyzer = frameAnalyzer
-            analysis.setAnalyzer(analysisExecutor, frameAnalyzer)
+            this.analysis = analysis
+            if (nav.onCamera) analysis.setAnalyzer(analysisExecutor, frameAnalyzer)
 
             provider.unbindAll()
             val cam = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
