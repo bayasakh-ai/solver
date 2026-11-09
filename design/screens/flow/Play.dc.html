@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Play</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&amp;family=Lora:wght@400;600&amp;family=Roboto:wght@400&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7d5411}a:hover{color:#5a3b0a}
+.pl-btn{transition:background-color .12s}
+.pl-btn:hover{background-color:rgba(182,130,53,.08)}
+.pl-btn:active{background-color:rgba(182,130,53,.18)}
+.pl-btn:focus-visible,.pl-cell:focus-visible{outline:2px solid #b68235;outline-offset:2px}
+.pl-btn:disabled{opacity:.45;cursor:not-allowed}
+@keyframes hxRing{0%{transform:scale(.6);opacity:0}6%{transform:scale(1.18);opacity:1}12%{transform:scale(1)}92%{opacity:1}100%{opacity:0}}
+@keyframes hxSweepX{0%,12%{transform:scaleX(0)}30%,92%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+@keyframes hxSweepY{0%,12%{transform:scaleY(0)}30%,92%{transform:scaleY(1);opacity:1}100%{transform:scaleY(1);opacity:0}}
+@keyframes hxCross{0%,30%{opacity:0}38%,92%{opacity:1}100%{opacity:0}}
+@keyframes hxGlow{0%,40%{opacity:0}50%,92%{opacity:1}100%{opacity:0}}
+@keyframes hxWrite{0%,50%{opacity:0;transform:scale(1.5)}62%,92%{opacity:1;transform:scale(1)}100%{opacity:0}}
+@keyframes hxS1{0%,30%{opacity:1}31%,100%{opacity:.45}}
+@keyframes hxS2{0%,30%{opacity:.45}31%,50%{opacity:1}51%,100%{opacity:.45}}
+@keyframes hxS3{0%,50%{opacity:.45}51%,96%{opacity:1}100%{opacity:.45}}
+.hx3 .hx-ring{animation:hxRing 5s ease-out infinite}
+.hx3 .hx-lx{animation:hxSweepX 5s ease-in-out infinite}
+.hx3 .hx-ly{animation:hxSweepY 5s ease-in-out infinite}
+.hx3 .hx-cross{animation:hxCross 5s linear infinite}
+.hx3 .hx-glow{animation:hxGlow 5s ease-out infinite}
+.hx3 .hx-write{animation:hxWrite 5s ease-out infinite}
+.hx3s .hx-s1{animation:hxS1 5s linear infinite}
+.hx3s .hx-s2{animation:hxS2 5s linear infinite}
+.hx3s .hx-s3{animation:hxS3 5s linear infinite}
+@media (prefers-reduced-motion: reduce){.hx3 *,.hx3s *{animation:none!important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #f3f2f2; color: #201f1d; font-family: 'Lora', serif; box-sizing: border-box">
+
+<header style="padding: 12px 22px 0 12px; display: flex; align-items: center; gap: 6px; height: 56px; box-sizing: content-box">
+<a class="pl-btn" href="Choose.dc.html" aria-label="Back" style="width: 44px; height: 44px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #201f1d; flex: none">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+</a>
+<div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+<span style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d5411">Scanned puzzle</span>
+<span style="font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 22px; line-height: 1.1">Hard</span>
+</div>
+<span aria-label="Time 4 minutes 12 seconds" style="display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-variant-numeric: tabular-nums; color: #444141">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+04:12
+</span>
+</header>
+
+<div style="margin: 8px auto 0; width: 346px; height: 346px; position: relative">
+<div style="width: 346px; height: 346px; box-sizing: border-box; border: 2px solid #201f1d; display: grid; grid-template-columns: repeat(9, 38px); grid-template-rows: repeat(9, 38px); background: #f8f6f4">
+<sc-for list="{{cells}}" as="cell" hint-placeholder-count="81">
+<button class="pl-cell" aria-label="{{cell.label}}" onClick="{{cell.pick}}" style="{{cell.style}}">
+<sc-if value="{{cell.hasNotes}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="width: 34px; height: 34px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); font-size: 9px; line-height: 11px; color: #605d5d; text-align: center">
+<sc-for list="{{cell.notes}}" as="n" hint-placeholder-count="9"><span>{{n}}</span></sc-for>
+</span>
+</sc-if>
+<sc-if value="{{cell.hasVal}}" hint-placeholder-val="{{ true }}">
+<span style="{{cell.dstyle}}">{{cell.txt}}</span>
+</sc-if>
+</button>
+</sc-for>
+</div>
+
+<sc-if value="{{hinting}}" hint-placeholder-val="{{ false }}">
+<div aria-hidden="true" class="{{ovCls}}" style="position: absolute; inset: 0; pointer-events: none">
+<sc-if value="{{showBox}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 116px; top: 116px; width: 114px; height: 114px; box-sizing: border-box; border: 2px solid #7d5411; background: rgba(250,203,141,.28); box-shadow: 0 0 0 1.5px rgba(255,255,255,.85)"></div>
+</sc-if>
+<sc-if value="{{isAdv}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 230px; top: 2px; width: 38px; height: 38px; box-sizing: border-box; border: 2px solid #7d5411; box-shadow: 0 0 14px rgba(225,173,102,.95), inset 0 0 10px rgba(225,173,102,.6)"></div>
+<sc-if value="{{advRevealed}}" hint-placeholder-val="{{ false }}">
+<span class="hx-write" style="position: absolute; left: 230px; top: 2px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 28px; color: #1D4FB0; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px rgba(255,255,255,.9); animation: hxWrite 1.6s ease-out 1 forwards">2</span>
+</sc-if>
+</sc-if>
+<sc-if value="{{showTech}}" hint-placeholder-val="{{ false }}">
+<div class="hx-lx" style="position: absolute; left: 116px; top: 134px; width: 209px; height: 2px; background: #7d5411; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); transform-origin: right center"></div>
+<div class="hx-lx" style="position: absolute; left: 21px; top: 210px; width: 209px; height: 2px; background: #7d5411; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); transform-origin: left center"></div>
+<div class="hx-ly" style="position: absolute; left: 172px; top: 21px; width: 2px; height: 209px; background: #7d5411; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); transform-origin: center top"></div>
+<div class="hx-ly" style="position: absolute; left: 210px; top: 116px; width: 2px; height: 133px; background: #7d5411; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); transform-origin: center bottom"></div>
+<sc-for list="{{rings}}" as="rg" hint-placeholder-count="4">
+<div class="hx-ring" style="{{rg.style}}"></div>
+</sc-for>
+<sc-for list="{{crosses}}" as="x" hint-placeholder-count="8">
+<svg class="hx-cross" width="16" height="16" viewBox="0 0 16 16" style="{{x.style}}"><path d="M3 3l10 10M13 3L3 13" stroke="#7d5411" stroke-width="1.8" stroke-linecap="round"></path></svg>
+</sc-for>
+<div class="hx-glow" style="position: absolute; left: 116px; top: 154px; width: 38px; height: 38px; box-sizing: border-box; border: 2px solid #7d5411; box-shadow: 0 0 14px rgba(225,173,102,.95), inset 0 0 10px rgba(225,173,102,.6)"></div>
+</sc-if>
+<sc-if value="{{showWrite}}" hint-placeholder-val="{{ false }}">
+<span class="hx-write" style="position: absolute; left: 116px; top: 154px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 28px; color: #1D4FB0; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px rgba(255,255,255,.9)">3</span>
+</sc-if>
+</div>
+</sc-if>
+</div>
+
+<p style="margin: 10px 22px 0; font-size: 13px; color: #605d5d; font-variant-numeric: tabular-nums; display: flex; justify-content: space-between">
+<span>{{toFill}} to fill</span><span>{{hintsLabel}}</span>
+</p>
+
+<sc-if value="{{playing}}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; left: 22px; right: 22px; top: 466px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<button class="pl-btn" onClick="{{undo}}" disabled="{{noUndo}}" style="height: 58px; border: none; background: transparent; border-radius: 4px; color: #201f1d; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-family: 'Lora', serif; font-size: 12px; cursor: pointer">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>
+Undo
+</button>
+<button class="pl-btn" onClick="{{erase}}" style="height: 58px; border: none; background: transparent; border-radius: 4px; color: #201f1d; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-family: 'Lora', serif; font-size: 12px; cursor: pointer">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
+Erase
+</button>
+<button class="pl-btn" onClick="{{toggleNotes}}" aria-pressed="{{notesOn}}" style="{{notesStyle}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>
+{{notesLabel}}
+</button>
+<button class="pl-btn" onClick="{{openHint}}" style="height: 58px; border: 1px solid #b68235; background: transparent; border-radius: 4px; color: #201f1d; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-family: 'Lora', serif; font-size: 12px; cursor: pointer">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7d5411" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg>
+Hint
+</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{keys}}" as="k" hint-placeholder-count="9">
+<button class="pl-btn" aria-label="{{k.label}}" onClick="{{k.press}}" disabled="{{k.done}}" style="height: 60px; border: 1px solid rgba(32,31,29,.22); background: transparent; border-radius: 4px; color: #201f1d; position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer">
+<span style="font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 30px; line-height: 1">{{k.d}}</span>
+<span style="position: absolute; right: 8px; bottom: 6px; font-family: 'Lora', serif; font-size: 11px; color: #605d5d; font-variant-numeric: tabular-nums">{{k.left}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{hinting}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Hint" style="position: absolute; left: 0; right: 0; bottom: 0; top: 458px; background: #f8f4f4; border-top: 1px solid rgba(32,31,29,.16); border-radius: 7px 7px 0 0; box-shadow: 0 -12px 32px rgba(45,43,43,.12); padding: 6px 22px 28px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box">
+<div style="display: flex; align-items: center; gap: 4px">
+<div style="flex: 1; min-height: 44px; display: flex; align-items: center">
+<sc-if value="{{showTabs}}" hint-placeholder-val="{{ true }}">
+<div role="tablist" aria-label="Hint level" style="flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{steps}}" as="st" hint-placeholder-count="3">
+<button role="tab" aria-selected="{{st.cur}}" class="pl-btn" onClick="{{st.go}}" style="{{st.style}}">{{st.label}}</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{isAdv}}" hint-placeholder-val="{{ false }}">
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #444141">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7d5411" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg>
+No simple step left
+</span>
+</sc-if>
+</div>
+<button class="pl-btn" aria-label="Close hint" onClick="{{closeHint}}" style="width: 44px; height: 44px; border: none; background: transparent; border-radius: 4px; color: #201f1d; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-right: -10px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d5411">{{hKicker}}</span>
+<h2 style="margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 26px; line-height: 1.12; letter-spacing: -0.01em">{{hTitle}}</h2>
+<p style="margin: 2px 0 0; font-size: 14px; line-height: 1.5; color: #444141">{{hBody}}</p>
+</div>
+<sc-if value="{{showSteps}}" hint-placeholder-val="{{ false }}">
+<ol class="{{stepsCls}}" style="margin: 0; padding: 0 0 0 20px; font-size: 13px; line-height: 1.6; color: #201f1d">
+<li class="hx-s1">The four 3s cross out their rows and columns.</li>
+<li class="hx-s2">One cell in the box is left.</li>
+<li class="hx-s3">The 3 goes there.</li>
+</ol>
+</sc-if>
+<sc-if value="{{showCands}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(32,31,29,.16); border-radius: 4px">
+<span style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #605d5d">Row 1 · Col 7</span>
+<span style="display: inline-flex; gap: 6px; font-family: 'Roboto', system-ui, sans-serif; font-size: 15px; font-variant-numeric: tabular-nums">
+<sc-for list="{{tally}}" as="t" hint-placeholder-count="9"><span style="{{t.style}}">{{t.d}}</span></sc-for>
+</span>
+</div>
+</sc-if>
+<div style="margin-top: auto; display: flex; gap: 10px">
+<sc-if value="{{showTabs}}" hint-placeholder-val="{{ true }}">
+<button class="pl-btn" onClick="{{replay}}" disabled="{{noReplay}}" style="height: 50px; padding: 0 16px; border: 1px solid rgba(32,31,29,.28); border-radius: 4px; background: transparent; color: #201f1d; font-family: 'Lora', serif; font-size: 15px; display: flex; align-items: center; gap: 8px; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+Replay
+</button>
+</sc-if>
+<sc-if value="{{advAsking}}" hint-placeholder-val="{{ false }}">
+<button class="pl-btn" onClick="{{closeHint}}" style="height: 50px; padding: 0 16px; border: 1px solid rgba(32,31,29,.28); border-radius: 4px; background: transparent; color: #201f1d; font-family: 'Lora', serif; font-size: 15px; cursor: pointer">Keep trying</button>
+</sc-if>
+<button class="pl-btn" onClick="{{primary}}" style="flex: 1; height: 50px; border: 1px solid #b68235; border-radius: 4px; background: transparent; color: #201f1d; font-family: 'Lora', serif; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer">
+{{primaryLabel}}
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a06f24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+</button>
+</div>
+</section>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"initialHint":{"editor":"enum","options":[0,1,2,3,4],"default":0},"stuck":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+const GIVENS = '005031040001000008794600000002000003900000005300000800000003517500000600070820900';
+const SOLUTION = '685731249231549768794682351462958173918376425357214896829463517543197682176825934';
+// The player's entries so far (r3c5, r3c6, r3c7, r7c1, r7c2).
+const START = { 22: 8, 23: 2, 24: 3, 54: 8, 55: 2 };
+// Where last-cell / hidden / naked singles stop: 21 more digits placed, 34 cells left (checked with Python).
+const STUCK_BOARD = '005031040031000008794600301402000103908300405307000800009463517543000682176825934';
+const STUCK = {};
+for (let i = 0; i < 81; i++) if (+STUCK_BOARD[i] && !+GIVENS[i]) STUCK[i] = +STUCK_BOARD[i];
+
+// A hint is data, not UI: this is what HintEngine would return. The UI only plays it.
+// Indexes are 0-based: cells 0..80 row-major, boxes 0..8 left-to-right, top-to-bottom.
+const ADVANCED = {
+  technique: 'ADVANCED', target: 6, digit: 2, candidates: [2, 7],   // r1c7: only 2 or 7, singles can't decide
+  text: 'This step needs an advanced technique.'
+};
+const HINT = {
+  technique: 'HIDDEN_SINGLE', digit: 3, unit: { type: 'BOX', index: 4 },
+  target: 39,                          // r5c4
+  eliminators: [4, 35, 45, 59],        // the 3s at r1c5, r4c9, r6c1, r7c6
+  crossedOut: [30, 31, 32, 40, 41, 48, 49, 50],
+  text: '3 can only go in one place in this box.'
+};
+const BOX4 = [30, 31, 32, 39, 40, 41, 48, 49, 50];
+const LINE_CELLS = [30, 31, 32, 33, 34, 35, 45, 46, 47, 48, 49, 50, 4, 13, 22, 31, 40, 49, 32, 41, 50, 59];
+const THIN = '1px solid rgba(32,31,29,.2)', THICK = '2px solid #201f1d';
+const at = i => ({ x: 2 + (i % 9) * 38, y: 2 + Math.floor(i / 9) * 38 });
+
+class Component extends DCLogic {
+  state = { sel: -1, entries: null, notes: {}, notesMode: false, history: [], hint: null, hintsUsed: null, anim: true, revealed: false };
+
+  componentWillUnmount() { clearTimeout(this.t); }
+
+  renderVals() {
+    const s = this.state;
+    const stuck = !!this.props.stuck;
+    const entries = s.entries || (stuck ? STUCK : START);
+    const hint = s.hint === null ? (+(this.props.initialHint ?? 0)) : s.hint;   // 1-3 hidden single levels, 4 advanced fallback
+    const adv = hint === 4;
+    const hintsUsed = s.hintsUsed === null ? (hint ? 1 : 0) : s.hintsUsed;
+    const val = i => +GIVENS[i] || entries[i] || 0;
+    const selVal = s.sel >= 0 ? val(s.sel) : 0;
+    const peer = (a, b) => a !== b && (a % 9 === b % 9 || Math.floor(a / 9) === Math.floor(b / 9) ||
+      (Math.floor(a / 27) === Math.floor(b / 27) && Math.floor((a % 9) / 3) === Math.floor((b % 9) / 3)));
+
+    const focus = new Set(adv ? [ADVANCED.target] : hint === 1 ? BOX4 : hint > 1 ? [...BOX4, ...LINE_CELLS, ...HINT.eliminators] : []);
+    const push = (next) => this.setState(st => ({ history: [...st.history, { entries: st.entries || (stuck ? STUCK : START), notes: st.notes }], ...next }));
+
+    const cells = Array.from({ length: 81 }, (_, i) => {
+      const r = Math.floor(i / 9), c = i % 9, v = val(i), given = !!+GIVENS[i];
+      const dim = hint > 0 && !focus.has(i);
+      const isSel = !hint && i === s.sel, same = !hint && selVal && v === selVal && !isSel, isPeer = !hint && s.sel >= 0 && peer(i, s.sel);
+      const bg = dim ? 'rgba(32,31,29,.09)' : isSel ? '#fff3e4' : same ? '#fff3e4' : isPeer ? '#eeece9' : 'transparent';
+      const style = 'width:38px;height:38px;box-sizing:border-box;padding:0;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font:inherit;color:inherit;border:none;'
+        + 'border-right:' + (c === 8 ? 'none' : c % 3 === 2 ? THICK : THIN) + ';'
+        + 'border-bottom:' + (r === 8 ? 'none' : r % 3 === 2 ? THICK : THIN) + ';'
+        + 'background:' + bg + ';box-shadow:' + (isSel ? 'inset 0 0 0 2px #201f1d' : 'none');
+      // Printed digits: regular sans. The player's digits: semibold serif in ink blue.
+      const dstyle = (given
+        ? 'font-family:Roboto,system-ui,sans-serif;font-weight:400;font-size:20px;color:#201f1d;'
+        : 'font-family:"Cormorant Garamond",serif;font-weight:600;font-size:27px;color:#1D4FB0;')
+        + 'line-height:1;font-variant-numeric:tabular-nums;' + (dim ? 'opacity:.32;' : '') + (same ? 'text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px;' : '');
+      const n = (adv && i === ADVANCED.target && !s.revealed) ? ADVANCED.candidates : (s.notes[i] || []);
+      return {
+        txt: v ? String(v) : '', hasVal: !!v, dstyle, style,
+        hasNotes: !v && n.length > 0, notes: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => n.includes(d) ? String(d) : ''),
+        label: 'Row ' + (r + 1) + ', column ' + (c + 1) + ', ' + (v ? v + (given ? ', printed' : ', yours') : 'empty'),
+        pick: () => { if (!hint) this.setState({ sel: i }); }
+      };
+    });
+
+    const counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 81; i++) counts[val(i)]++;
+    const editable = s.sel >= 0 && !+GIVENS[s.sel];
+    const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => ({
+      d: String(d), done: counts[d] >= 9, left: counts[d] >= 9 ? '' : String(9 - counts[d]),
+      label: d + ', ' + (9 - counts[d]) + ' left',
+      press: () => {
+        if (!editable) return;
+        if (s.notesMode) {
+          const cur = s.notes[s.sel] || [];
+          push({ notes: { ...s.notes, [s.sel]: cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d] } });
+        } else push({ entries: { ...entries, [s.sel]: d } });
+      }
+    }));
+
+    const levelNames = ['Nudge', 'Technique', 'Show me'];
+    const steps = levelNames.map((label, k) => {
+      const n = k + 1, cur = n === hint, done = n < hint;
+      return {
+        label: n + ' ' + label, cur,
+        go: () => this.setLevel(n),
+        style: 'height:44px;border:none;background:transparent;cursor:pointer;font-family:Lora,serif;font-size:13px;padding:0;'
+          + 'color:' + (cur || done ? '#201f1d' : '#605d5d') + ';font-weight:' + (cur ? 600 : 400) + ';'
+          + 'border-bottom:' + (cur ? '4px solid #201f1d' : done ? '3px solid #a06f24' : '2px dashed #9b9797')
+      };
+    });
+
+    const copy = {
+      1: { k: 'Hint ' + hintsUsed, t: 'Look at the middle box', b: 'One digit has only one place it can go here.' },
+      2: { k: 'Hint ' + hintsUsed + ' · Hidden single', t: HINT.text, b: 'The 3s in rows 4 and 6 and in columns 5 and 6 rule out the other eight cells.' },
+      3: { k: 'Hint ' + hintsUsed + ' · Hidden single', t: 'So the 3 goes here', b: 'Row 5, column 4.' },
+      4: s.revealed
+        ? { k: 'Hint ' + hintsUsed + ' · Revealed', t: 'Row 1, column 7 is a 2', b: 'That opens up simple steps again. Ask for another hint if you get stuck.' }
+        : { k: 'Hint ' + hintsUsed + ' · Advanced', t: ADVANCED.text, b: 'No single works anywhere right now. This app doesn’t explain pairs or pointing yet, but it can reveal a cell to get you moving.' }
+    }[hint] || { k: '', t: '', b: '' };
+
+    const tally = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => {
+      const ok = ADVANCED.candidates.includes(d);
+      return { d: String(d), style: ok ? 'color:#201f1d;font-weight:400;padding:0 3px;box-shadow:inset 0 0 0 1px #7d5411;border-radius:2px' : 'color:#9b9797;text-decoration:line-through;padding:0 3px' };
+    });
+
+    const ring = i => { const p = at(i); return { style: 'position:absolute;left:' + (p.x + 3) + 'px;top:' + (p.y + 3) + 'px;width:32px;height:32px;box-sizing:border-box;border-radius:50%;border:2px solid #7d5411;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)' }; };
+    const cross = i => { const p = at(i); return { style: 'position:absolute;left:' + (p.x + 11) + 'px;top:' + (p.y + 11) + 'px' }; };
+    const closeWith = st => ({ hint: 0, hintsUsed, revealed: false,
+      ...(adv && s.revealed ? { entries: { ...(st.entries || (stuck ? STUCK : START)), [ADVANCED.target]: ADVANCED.digit }, history: [...st.history, { entries: st.entries || (stuck ? STUCK : START), notes: st.notes }] } : {}) });
+
+    return {
+      cells, keys,
+      playing: !hint, hinting: hint > 0,
+      toFill: 81 - cells.filter(x => x.hasVal).length,
+      hintsLabel: hintsUsed === 1 ? '1 hint used' : hintsUsed + ' hints used',
+      undo: () => this.setState(st => st.history.length ? { entries: st.history[st.history.length - 1].entries, notes: st.history[st.history.length - 1].notes, history: st.history.slice(0, -1) } : {}),
+      noUndo: s.history.length === 0,
+      erase: () => { if (editable) { const e = { ...entries }; delete e[s.sel]; const n = { ...s.notes }; delete n[s.sel]; push({ entries: e, notes: n }); } },
+      notesOn: s.notesMode, notesLabel: s.notesMode ? 'Notes on' : 'Notes',
+      toggleNotes: () => this.setState({ notesMode: !s.notesMode }),
+      notesStyle: 'height:58px;border:none;border-radius:4px;color:#201f1d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-family:Lora,serif;font-size:12px;cursor:pointer;'
+        + (s.notesMode ? 'background:#fff3e4;box-shadow:inset 0 -2px 0 #b68235;font-weight:600;' : 'background:transparent;'),
+      openHint: () => this.setState({ hint: stuck ? 4 : 1, sel: -1, hintsUsed: hintsUsed + 1, anim: true, revealed: false }),
+      closeHint: () => this.setState(closeWith),
+      steps, tally,
+      hKicker: copy.k, hTitle: copy.t, hBody: copy.b,
+      showTabs: hint >= 1 && hint <= 3, isAdv: adv, advRevealed: adv && s.revealed, advAsking: adv && !s.revealed, showCands: adv && !s.revealed,
+      showBox: hint >= 1 && hint <= 3,
+      showTech: hint === 2 || hint === 3, showWrite: hint === 3 && s.anim, showSteps: hint === 3,
+      ovCls: hint === 3 && s.anim ? 'hx3' : '', stepsCls: s.anim ? 'hx3s' : '',
+      rings: HINT.eliminators.map(ring), crosses: HINT.crossedOut.map(cross),
+      noReplay: hint !== 3,
+      replay: () => { this.setState({ anim: false }); clearTimeout(this.t); this.t = setTimeout(() => this.setState({ anim: true }), 40); },
+      primaryLabel: adv ? (s.revealed ? 'Keep playing' : 'Reveal this cell') : hint === 3 ? 'Keep playing' : 'Next level',
+      primary: () => {
+        if (adv && !s.revealed) return this.setState({ revealed: true, hintsUsed });
+        if (!adv && hint < 3) return this.setLevel(hint + 1);
+        if (adv) return this.setState(closeWith);
+        this.setState(st => ({ hint: 0, hintsUsed, entries: { ...(st.entries || START), [HINT.target]: HINT.digit }, history: [...st.history, { entries: st.entries || START, notes: st.notes }] }));
+      }
+    };
+  }
+
+  setLevel(n) {
+    const used = this.state.hintsUsed === null ? 1 : this.state.hintsUsed;
+    this.setState({ hint: n, hintsUsed: used, anim: true });
+  }
+}
+</script>
+</body>
+</html>

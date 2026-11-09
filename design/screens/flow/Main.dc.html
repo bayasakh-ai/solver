@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check the reading</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&amp;family=Lora:wght@400;600&amp;family=Roboto:wght@400&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7d5411}a:hover{color:#5a3b0a}
+.ck-crop{background-image:url(/_blob/79e068d3d38d7deda3fe6f9ec0d0682d);background-size:576px 576px;background-repeat:no-repeat}
+.ck-btn{transition:background-color .12s}
+.ck-btn:hover{background-color:rgba(182,130,53,.08)}
+.ck-btn:active{background-color:rgba(182,130,53,.18)}
+.ck-btn:focus-visible,.ck-cell:focus-visible{outline:2px solid #b68235;outline-offset:2px}
+.ck-cell:hover{background-color:#fff3e4}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #f3f2f2; color: #201f1d; font-family: 'Lora', serif; box-sizing: border-box">
+
+<div style="padding: 12px 22px 0; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; justify-content: space-between; margin-left: -10px">
+<button class="ck-btn" aria-label="Back to camera" style="width: 44px; height: 44px; border: none; background: transparent; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #201f1d; cursor: pointer">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+</button>
+<span style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d5411; font-variant-numeric: tabular-nums">Step 2 of 3</span>
+</div>
+<h1 style="margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 30px; line-height: 1.1; letter-spacing: -0.015em">Check the reading</h1>
+<p style="margin: 0; font-size: 14px; line-height: 1.45; color: #605d5d">Compare it with your puzzle. Tap any cell to change it.</p>
+</div>
+
+<div role="group" aria-label="View" style="margin: 14px 22px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid rgba(32,31,29,.22); border-radius: 4px; overflow: hidden">
+<button class="ck-btn" aria-pressed="{{readingOn}}" onClick="{{showReading}}" style="{{segReading}}">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="1"></rect><path d="M3 9h18"></path><path d="M3 15h18"></path><path d="M9 3v18"></path><path d="M15 3v18"></path></svg>
+Reading
+</button>
+<button class="ck-btn" aria-pressed="{{photoOn}}" onClick="{{showPhoto}}" style="{{segPhoto}}">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+Photo
+</button>
+</div>
+
+<div style="margin: 14px auto 0; width: 346px; height: 346px; position: relative">
+<sc-if value="{{readingOn}}" hint-placeholder-val="{{ true }}">
+<div style="width: 346px; height: 346px; box-sizing: border-box; border: 2px solid #201f1d; display: grid; grid-template-columns: repeat(9, 38px); grid-template-rows: repeat(9, 38px); background: #f8f6f4">
+<sc-for list="{{cells}}" as="cell" hint-placeholder-count="81">
+<button class="ck-cell" aria-label="{{cell.label}}" onClick="{{cell.pick}}" style="{{cell.style}}"><span style="{{cell.dstyle}}">{{cell.txt}}</span></button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{photoOn}}" hint-placeholder-val="{{ false }}">
+<img src="/_blob/79e068d3d38d7deda3fe6f9ec0d0682d" alt="The captured puzzle, flattened" style="width: 346px; height: 346px; display: block">
+</sc-if>
+</div>
+
+<div style="margin: 12px 22px 0; display: flex; gap: 22px; font-size: 13px; color: #444141; align-items: center">
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #c2412d; display: inline-flex; align-items: center; justify-content: center; font-family: 'Roboto', system-ui, sans-serif; font-size: 12px">9</span>{{unsureLabel}}</span>
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="font-family: 'Roboto', system-ui, sans-serif; font-size: 14px; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; text-decoration-color: #7d5411; padding: 0 4px">3</span>{{fixedLabel}}</span>
+</div>
+<p style="margin: 8px 22px 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444141; font-variant-numeric: tabular-nums">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin: 0 2px"><path d="m10 10-6.157 6.162a2 2 0 0 0-.5.833l-1.322 4.36a.5.5 0 0 0 .622.624l4.358-1.323a2 2 0 0 0 .83-.5L14 13.982"></path><path d="m12.829 7.172 4.359-4.346a1 1 0 1 1 3.986 3.986l-4.353 4.353"></path><path d="m15 5 4 4"></path><path d="m2 2 20 20"></path></svg>
+{{penLabel}}
+</p>
+
+<sc-if value="{{noSel}}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 22px 30px; border-top: 1px solid rgba(32,31,29,.16); display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: #605d5d; font-variant-numeric: tabular-nums">{{summary}}</p>
+<div style="display: flex; gap: 12px">
+<button class="ck-btn" style="height: 50px; padding: 0 18px; border: 1px solid rgba(32,31,29,.28); border-radius: 4px; background: transparent; color: #201f1d; font-family: 'Lora', serif; font-size: 15px; display: flex; align-items: center; gap: 8px; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+Rescan
+</button>
+<a class="ck-btn" href="Choose.dc.html" style="flex: 1; height: 50px; border: 1px solid #b68235; border-radius: 4px; color: #201f1d; text-decoration: none; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a06f24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+Looks right
+</a>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{hasSel}}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-label="{{sheetLabel}}" style="position: absolute; left: 0; right: 0; bottom: 0; background: #f8f4f4; border-top: 1px solid rgba(32,31,29,.16); border-radius: 7px 7px 0 0; box-shadow: 0 -12px 32px rgba(45,43,43,.14); padding: 14px 22px 26px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; gap: 14px; align-items: flex-start">
+<div class="ck-crop" role="img" aria-label="What the camera saw in this cell" style="{{cropStyle}}"></div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d5411; font-variant-numeric: tabular-nums">{{sheetKicker}}</span>
+<span style="font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 22px; line-height: 1.15">{{sheetTitle}}</span>
+<span style="font-size: 13px; line-height: 1.45; color: #605d5d">{{sheetNote}}</span>
+</div>
+<button class="ck-btn" aria-label="Close" onClick="{{closeSheet}}" style="width: 44px; height: 44px; margin: -8px -10px 0 0; border: none; background: transparent; border-radius: 4px; color: #201f1d; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{pad}}" as="k" hint-placeholder-count="10">
+<button class="ck-btn" aria-label="{{k.label}}" aria-pressed="{{k.on}}" onClick="{{k.pick}}" style="{{k.style}}">{{k.txt}}</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"initialSel":{"editor":"int","default":-1,"min":-1,"max":80},"penIgnored":{"editor":"int","default":56,"min":0,"max":81},"$preview":{"width":390,"height":844}}'>
+const GIVENS = '005031040001000008794600000002000003900000005300000800000003517500000600070820900';
+// What the reader reported for the cells worth a look (mirrors SelfCorrect + low model confidence).
+const READ = {
+  4:  { kind: 'fixed',  read: 8, now: 3, note: 'The camera read 8, which left no solution. Changed to 3, the next most likely digit.' },
+  36: { kind: 'unsure', now: 9, alt: 4, note: 'Read as 9, but not confidently. It might be a 4 (dashed).' },
+  63: { kind: 'unsure', now: 5, alt: 6, note: 'Read as 5, but not confidently. It might be a 6 (dashed).' }
+};
+const THIN = '1px solid rgba(32,31,29,.2)', THICK = '2px solid #201f1d';
+
+class Component extends DCLogic {
+  state = { sel: null, view: 'reading', vals: {}, touched: {} };
+
+  renderVals() {
+    const s = this.state;
+    const sel = s.sel === null ? (this.props.initialSel ?? -1) : s.sel;
+    const val = i => (i in s.vals) ? s.vals[i] : (READ[i] ? READ[i].now : +GIVENS[i]);
+    const mark = i => (!s.touched[i] && READ[i]) ? READ[i].kind : (s.touched[i] ? 'you' : '');
+
+    const cells = Array.from({ length: 81 }, (_, i) => {
+      const r = Math.floor(i / 9), c = i % 9, v = val(i), m = mark(i), on = i === sel;
+      const style = 'width:38px;height:38px;box-sizing:border-box;padding:0;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font:inherit;color:inherit;border:none;'
+        + 'border-right:' + (c === 8 ? 'none' : c % 3 === 2 ? THICK : THIN) + ';'
+        + 'border-bottom:' + (r === 8 ? 'none' : r % 3 === 2 ? THICK : THIN) + ';'
+        + 'background:' + (on ? '#fff3e4' : 'transparent') + ';'
+        + 'box-shadow:' + (on ? 'inset 0 0 0 2px #201f1d' : 'none');
+      let dstyle = 'font-family:Roboto,system-ui,sans-serif;font-weight:400;font-size:20px;line-height:1;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;justify-content:center;';
+      if (m === 'unsure') dstyle += 'width:30px;height:30px;border-radius:50%;box-shadow:inset 0 0 0 1.5px #c2412d;';
+      if (m === 'fixed') dstyle += 'text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px;text-decoration-color:#7d5411;';
+      const what = v ? String(v) : 'empty';
+      const extra = m === 'unsure' ? ', unsure' : m === 'fixed' ? ', corrected' : '';
+      return { txt: v ? String(v) : '', style, dstyle, label: 'Row ' + (r + 1) + ', column ' + (c + 1) + ', ' + what + extra,
+        pick: () => this.setState({ sel: i, view: 'reading' }) };
+    });
+
+    const unsure = Object.keys(READ).filter(i => !s.touched[i] && READ[i].kind === 'unsure').length;
+    const fixed = Object.keys(READ).filter(i => !s.touched[i] && READ[i].kind === 'fixed').length;
+    const filled = cells.filter(x => x.txt).length;
+    const changed = Object.keys(s.touched).length;
+
+    const seg = on => 'height:40px;border:none;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-family:Lora,serif;font-size:14px;color:#201f1d;'
+      + (on ? 'background:#fff3e4;font-weight:600;box-shadow:inset 0 -2px 0 #b68235;' : 'background:transparent;font-weight:400;');
+
+    let sheet = { label: '', kicker: '', title: '', note: '', crop: '' , pad: [] };
+    if (sel >= 0) {
+      const r = Math.floor(sel / 9), c = sel % 9, v = val(sel), m = mark(sel), info = READ[sel];
+      sheet.kicker = 'Row ' + (r + 1) + ' · Column ' + (c + 1);
+      if (m === 'fixed') { sheet.title = 'Corrected: ' + info.read + ' → ' + info.now; sheet.note = info.note; }
+      else if (m === 'unsure') { sheet.title = 'Is this a ' + info.now + '?'; sheet.note = info.note; }
+      else if (m === 'you') { sheet.title = v ? 'You set ' + v : 'You cleared it'; sheet.note = 'The photo is on the left.'; }
+      else { sheet.title = v ? 'Read as ' + v : 'Read as empty'; sheet.note = 'Pick what the paper shows.'; }
+      sheet.label = 'Change row ' + (r + 1) + ', column ' + (c + 1);
+      sheet.crop = 'width:72px;height:72px;flex:none;border:4px solid #eae9e9;outline:1px solid rgba(32,31,29,.16);background-size:648px 648px;background-position:-' + (c * 72) + 'px -' + (r * 72) + 'px';
+      const alt = (m === 'unsure') ? info.alt : (m === 'fixed' ? info.read : -1);
+      const set = d => () => this.setState(st => ({ sel: -1, vals: { ...st.vals, [sel]: d }, touched: { ...st.touched, [sel]: true } }));
+      sheet.pad = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(d => {
+        const cur = d === v, dash = d === alt && !cur;
+        return {
+          txt: d ? String(d) : 'Empty', on: cur, pick: set(d),
+          label: d ? 'Set ' + d : 'Make the cell empty',
+          style: 'height:48px;border-radius:4px;cursor:pointer;color:#201f1d;font-variant-numeric:tabular-nums;font-weight:400;'
+            + (d ? 'font-family:Roboto,system-ui,sans-serif;font-size:21px;' : 'font-family:Lora,serif;font-size:13px;')
+            + (cur ? 'border:2px solid #201f1d;background:#fff3e4;' : dash ? 'border:1.5px dashed #c2412d;background:transparent;' : 'border:1px solid rgba(32,31,29,.22);background:transparent;')
+        };
+      });
+    }
+
+    return {
+      cells,
+      readingOn: s.view === 'reading', photoOn: s.view === 'photo',
+      showReading: () => this.setState({ view: 'reading' }),
+      showPhoto: () => this.setState({ view: 'photo', sel: -1 }),
+      segReading: seg(s.view === 'reading'), segPhoto: seg(s.view === 'photo'),
+      unsureLabel: 'Unsure · ' + unsure, fixedLabel: 'Corrected · ' + fixed,
+      penLabel: (this.props.penIgnored ?? 56) + ' pen entries ignored',
+      summary: filled + ' digits read' + (unsure + fixed ? ', ' + (unsure + fixed) + ' worth a look' : '') + (changed ? ', ' + changed + ' changed by you' : '') + '. If the grid matches the paper, carry on.',
+      noSel: sel < 0, hasSel: sel >= 0,
+      sheetLabel: sheet.label, sheetKicker: sheet.kicker, sheetTitle: sheet.title, sheetNote: sheet.note, cropStyle: sheet.crop, pad: sheet.pad,
+      closeSheet: () => this.setState({ sel: -1 })
+    };
+  }
+}
+</script>
+</body>
+</html>
