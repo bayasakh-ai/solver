@@ -52,19 +52,41 @@ data class NavStack(val stack: List<Route> = listOf(Route.Camera)) {
 }
 
 /**
- * What survives Android killing the process (onSaveInstanceState): the game in progress
- * and, if the board was open, how it was being played. Restoring opens that board
- * straight over the camera. Check isn't saved: its photo is too big for the Bundle and
- * a rescan is quick. Pure Kotlin, plain text.
+ * The game in progress, kept in storage after every move so it survives process death,
+ * the app being swiped away and a phone restart (GameStore writes it; the camera bar
+ * offers Continue). One slot: a new game replaces it, a finished one is dropped. Check
+ * isn't kept: its photo is large and a rescan is quick. Pure Kotlin, plain text.
  */
 object SavedSession {
-    fun encode(game: GameState, playing: PlayMode?): String = (playing?.name ?: "-") + "\n" + game.encode()
-
-    /** The game and the screen to show, or null for anything unreadable (start at the camera). */
-    fun decode(text: String): Pair<GameState, NavStack>? {
-        val mode = text.substringBefore('\n')
-        val game = GameState.decode(text.substringAfter('\n', "")) ?: return null
-        val playing = PlayMode.entries.firstOrNull { it.name == mode && it != PlayMode.SOLUTION }
-        return game to (playing?.let { NavStack().open(Route.Play(game.puzzle, it)) } ?: NavStack())
+    /** A kept game and how it was being played (Hints or Myself; never Show solution). */
+    class Saved(val game: GameState, val mode: PlayMode) {
+        val board: Route.Play get() = Route.Play(game.puzzle, mode)
     }
+
+    fun encode(game: GameState, mode: PlayMode): String = mode.name + "\n" + game.encode()
+
+    /** Null for anything unreadable or finished: nothing to continue. */
+    fun decode(text: String): Saved? {
+        val mode = PlayMode.entries.firstOrNull { it.name == text.substringBefore('\n').trim() && it != PlayMode.SOLUTION }
+            ?: PlayMode.HINTS
+        val game = GameState.decode(text.substringAfter('\n', "")) ?: return null
+        return Saved(game, mode).takeIf { keep(game) }
+    }
+
+    /** Worth keeping: a finished game has nothing to continue. */
+    fun keep(game: GameState) = !game.finished
+
+    /**
+     * What to write when the game changed from [before] to [after]: the whole game after
+     * a move, only the time after a clock tick (the game text is up to ~33 KB; the clock
+     * ticks every second), nothing to keep once finished.
+     */
+    fun change(before: GameState?, after: GameState?): Change = when {
+        after == null || !keep(after) -> Change.Clear
+        before != null && after.sameMovesAs(before) -> if (after.elapsedMs == before.elapsedMs) Change.None else Change.Time
+        else -> Change.Game
+    }
+
+    enum class Change { None, Time, Game, Clear }
 }
+

@@ -131,6 +131,15 @@ class GameState private constructor(
 
     fun nextHint(): HintResult = HintEngine.next(puzzle.givens, entries, puzzle.solution)
 
+    /**
+     * Same board, notes, undo steps, mistakes and hints as [other]: only the clock may
+     * differ. Cheap (every move makes new arrays; a tick keeps them), so GameStore can
+     * save just the time on a tick.
+     */
+    fun sameMovesAs(other: GameState): Boolean =
+        puzzle == other.puzzle && entries === other.entries && notes === other.notes &&
+            history.size == other.history.size && mistakes == other.mistakes && hintsUsed == other.hintsUsed
+
     /** What the Solved pop-up says. Null until the board is finished. */
     fun summary(): FinishSummary? = if (finished) FinishSummary(elapsedMs, hintsUsed, mistakes) else null
 
@@ -165,7 +174,9 @@ class GameState private constructor(
 
         /** Back from [encode]. Null for anything that isn't a whole, consistent game (start fresh). */
         fun decode(text: String): GameState? = runCatching {
-            val lines = text.lines().filter { it.isNotEmpty() }
+            // trimmed: storage may add whitespace (a Samsung phone's SharedPreferences gave
+            // the text back with four spaces after the last line), or CRLF line ends
+            val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
             require(lines[0] == FORMAT)
             val puzzle = Puzzle(parseDigits(lines[2]), parseDigits(lines[3]), PuzzleSource.valueOf(lines[1]))
             require(Solver.solve(puzzle.givens, limit = 2).let { it.size == 1 && it[0].contentEquals(puzzle.solution) })

@@ -84,7 +84,23 @@ class MainActivity : ComponentActivity() {
     // core flow (Route.kt): the reading being checked, its photo, and the game in progress
     private var checkSession by mutableStateOf<CheckSession?>(null)
     private var checkPhoto by mutableStateOf<Bitmap?>(null)
-    private var game by mutableStateOf<GameState?>(null)
+    private var gameState by mutableStateOf<GameState?>(null)
+    /** The game in progress. Every change is written to storage (GameStore) right away. */
+    private var game: GameState?
+        get() = gameState
+        set(value) {
+            val before = gameState
+            gameState = value
+            gameStore.update(before, value, gameMode)
+        }
+    /** How the kept game is played (Hints or Myself): Continue reopens it that way. */
+    private var gameMode = PlayMode.HINTS
+        set(value) {
+            if (field == value) return
+            field = value
+            gameState?.let { gameStore.update(null, it, value) } // rewrite with the new mode
+        }
+    private lateinit var gameStore: GameStore
     private var board by mutableStateOf(BoardSettings())
     /** Play a puzzle: the difficulty being generated, null when idle. */
     private var making by mutableStateOf<Difficulty?>(null)
@@ -108,10 +124,14 @@ class MainActivity : ComponentActivity() {
         debug = settings.debug
         board = settings.board
         classifier = DigitClassifier(this)
-        // Android killed the process mid-game: put the board back as it was
-        savedInstanceState?.getString(KEY_GAME)?.let(SavedSession::decode)?.let { (g, n) ->
-            game = g
-            nav = n
+        // a game kept from before (swiped away, phone restarted, process killed): the
+        // camera bar offers Continue. If Android killed the process with the board open,
+        // reopen the board itself.
+        gameStore = GameStore(this)
+        gameStore.load()?.let { saved ->
+            gameState = saved.game
+            gameMode = saved.mode
+            if (savedInstanceState?.getBoolean(KEY_BOARD_OPEN) == true) nav = NavStack().open(saved.board)
         }
 
         hasCameraPermission = ContextCompat.checkSelfPermission(
@@ -143,7 +163,8 @@ class MainActivity : ComponentActivity() {
                         GridOverlay(result, Modifier.fillMaxSize())
                         val content = barContent(result, frozen != null, error,
                             onFreeze = ::toggleFreeze, onReset = ::resetScan, onCheck = ::openCheck,
-                            onPlayPuzzle = { nav = nav.open(Route.NewPuzzle) })
+                            onPlayPuzzle = { nav = nav.open(Route.NewPuzzle) },
+                            onContinue = continueAction())
                         CameraChrome {
                             TopChrome(content, result, showDebug = debug, thumbnail = result?.warped,
                                 onSettings = { nav = nav.open(Route.Settings) }, modifier = Modifier.align(Alignment.TopCenter))
@@ -155,7 +176,9 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Camera permission is needed to scan puzzles.")
-                            FlowButton("Play a puzzle", { nav = nav.open(Route.NewPuzzle) }, icon = LucideIcons.Grid, primary = true)
+                            continueAction()?.let { FlowButton("Continue", it, icon = LucideIcons.Play, primary = true) }
+                            FlowButton("Play a puzzle", { nav = nav.open(Route.NewPuzzle) }, icon = LucideIcons.Grid,
+                                primary = continueAction() == null)
                         }
                     }
                     if (!nav.onCamera) BackHandler(onBack = ::goBack)
@@ -164,7 +187,7 @@ class MainActivity : ComponentActivity() {
                         Route.NewPuzzle -> NewPuzzleScreen(making,
                             inProgress = game?.takeIf { it.puzzle.source == PuzzleSource.GENERATED && !it.finished },
                             onPick = ::newPuzzle,
-                            onResume = { game?.let { nav = nav.open(Route.Play(it.puzzle, PlayMode.HINTS)) } },
+                            onResume = { game?.let { nav = nav.open(Route.Play(it.puzzle, gameMode)) } },
                             onBack = ::goBack)
                         Route.Settings -> SettingsScreen(palette, debug, board,
                             onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard, onBack = ::goBack)
@@ -247,7 +270,10 @@ class MainActivity : ComponentActivity() {
      * doesn't touch it. A new game starts from the digits the user wrote on paper ([start]).
      */
     private fun play(puzzle: Puzzle, mode: PlayMode, start: IntArray = IntArray(81)) {
-        if (mode != PlayMode.SOLUTION && game?.puzzle != puzzle) game = GameState(puzzle, start)
+        if (mode != PlayMode.SOLUTION) {
+            if (game?.puzzle != puzzle) game = GameState(puzzle, start)
+            gameMode = mode
+        }
         nav = nav.open(Route.Play(puzzle, mode))
     }
 
@@ -284,17 +310,26 @@ class MainActivity : ComponentActivity() {
             making = null
             if (p != null && nav.current == Route.NewPuzzle) {
                 game = GameState(p)
+                gameMode = PlayMode.HINTS
                 nav = nav.open(Route.Play(p, PlayMode.HINTS))
             }
         }
     }
 
-    /** Process death: keep the game (and the open board) as text; see SavedSession. */
+    /** Continue on the camera bar: a game kept and not finished. Null: nothing to continue. */
+    private fun continueAction(): (() -> Unit)? {
+        val g = game?.takeIf { SavedSession.keep(it) } ?: return null
+        return { nav = NavStack().open(Route.Play(g.puzzle, gameMode)) }
+    }
+
+    /**
+     * The game itself is already in GameStore; the Bundle only remembers whether the board
+     * was open, so a process Android kills in the background comes back on the board.
+     */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         val g = game ?: return
-        val playing = nav.stack.filterIsInstance<Route.Play>().lastOrNull { it.puzzle == g.puzzle && it.mode != PlayMode.SOLUTION }
-        outState.putString(KEY_GAME, SavedSession.encode(g, playing?.mode))
+        outState.putBoolean(KEY_BOARD_OPEN, nav.stack.any { it is Route.Play && it.puzzle == g.puzzle && it.mode != PlayMode.SOLUTION })
     }
 
     /** Pause frame analysis while a full-screen page covers the camera; resume on return. */
@@ -369,7 +404,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val KEY_GAME = "game"
+        const val KEY_BOARD_OPEN = "board_open"
     }
 
     override fun onDestroy() {

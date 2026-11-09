@@ -140,6 +140,15 @@ class GameStateTest {
         assertTrue(g.encode().length < 40_000)
     }
 
+    @Test fun decodeSurvivesWhitespaceFromStorage() {
+        val g = fresh.enter(0, 6).toggleNote(1, 8)
+        val text = g.encode()
+        // what a Samsung phone's SharedPreferences gave back: four spaces after the last line
+        assertEquals(listOf(8), GameState.decode(text + "    ")!!.notesOf(1))
+        assertEquals(6, GameState.decode(text.replace("\n", "\r\n"))!!.value(0))
+        assertEquals(6, SavedSession.decode("MYSELF\r\n" + text + "  \n ")!!.game.value(0))
+    }
+
     @Test fun decodeRejectsAnythingBroken() {
         val text = fresh.enter(0, 6).encode()
         assertEquals(null, GameState.decode(""))

@@ -197,11 +197,20 @@ architecture and rules.
     unique. Several work: the scan's value (undoes a bad edit), else the second guess,
     else the only digit. None/ambiguous: the old dashed rules.
   - **Remaining counts** on the keypad: Settings -> Game board, on by default.
-  - **Process death**: `onSaveInstanceState` keeps the game as plain text
-    (`GameState.encode`, `SavedSession`): board, notes, mistakes, hints, time, last 100
-    undo steps (~33 KB max). The open board (not Show solution) reopens over the camera.
-    Check isn't saved (the photo is too big for a Bundle; rescanning is quick). A game
-    is not kept after the user closes the app (that's the v1.1 library).
+  - **Kept game** (`GameStore` = SharedPreferences "game"; rules in `SavedSession` +
+    `GameState.encode`, plain text): written after **every** change, so it survives
+    process death, swiping the app away and a phone restart. Board, notes, mistakes,
+    hints, time, mode (Hints/Myself), last 100 undo steps (~33 KB max). A clock tick
+    writes only the time (`SavedSession.change`), not the whole game every second. One
+    slot: a new game replaces it; a finished game is deleted. **Continue** = first tile
+    on the camera bar while Searching (and on the no-permission screen). If Android
+    kills the app in the background with the board open, the Bundle's `board_open`
+    flag reopens the board itself. An unreadable save is never deleted (a format bug
+    must not wipe a game). Check isn't kept (photo too big; rescanning is quick).
+    Tested on the phone (2026-11-09): force-stop (= Android Studio's Terminate), swipe
+    from Recents, background `am kill`: board, notes, hints, mistakes, timer, undo all
+    back. Found on the way: this Samsung's SharedPreferences returns the string with
+    trailing spaces, so `decode` trims lines.
 
 ---
 
@@ -315,6 +324,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     Route.kt           Route (Camera / Settings / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
     Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
+    GameStore.kt       the kept game in SharedPreferences, written after every change (Android side)
     Generator.kt       puzzles rated exactly as chosen (port of synth.random_puzzle + HintEngine) (pure Kotlin)
     HintEngine.kt      hints as data (last empty cell, hidden/naked single, advanced fallback),
                        difficulty rating (pure Kotlin)

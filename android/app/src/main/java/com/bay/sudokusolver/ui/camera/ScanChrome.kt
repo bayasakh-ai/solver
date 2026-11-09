@@ -89,13 +89,18 @@ fun barContent(
     onCheck: () -> Unit,
     /** Play a puzzle (a generated one): offered while no grid is in view. */
     onPlayPuzzle: (() -> Unit)? = null,
+    /** Continue the kept game: offered first while no grid is in view. */
+    onContinue: (() -> Unit)? = null,
 ): BarContent {
     if (error != null) return BarContent("Error", LucideIcons.AlertCircle, "Something went wrong", error)
     val state = result?.state ?: ScanState.Searching
     return when (state) {
         ScanState.Searching -> BarContent("Searching", LucideIcons.Scan,
             "Point at a sudoku", "Fit the whole grid inside the frame",
-            actions = listOfNotNull(onPlayPuzzle?.let { BarAction("Play a puzzle", LucideIcons.Grid, onClick = it) }))
+            actions = listOfNotNull(
+                onContinue?.let { BarAction("Continue", LucideIcons.Play, primary = true, onClick = it) },
+                onPlayPuzzle?.let { BarAction("Play a puzzle", LucideIcons.Grid, onClick = it) },
+            ))
         is ScanState.Reading -> BarContent("Puzzle found", LucideIcons.ScanLine,
             "Reading digits… ${state.frames}/${state.window}", "Keep the whole grid in view",
             Progress(state.frames, state.window, paused = false))
