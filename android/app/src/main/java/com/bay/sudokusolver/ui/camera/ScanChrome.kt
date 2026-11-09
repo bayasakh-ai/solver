@@ -74,13 +74,19 @@ data class BarContent(
 
 private fun plural(n: Int, word: String) = "$n $word${if (n == 1) "" else "s"}"
 
-/** What the bar says for each scan state. Wording follows the design. */
+/**
+ * What the bar says for each scan state. Wording follows the design. Live AR stays the
+ * quick "just show me the answer" mode; [onCheck] hands the capture to the core flow
+ * (Check -> Choose -> Play): "Play" on Solved (v2's Hint slot), "Check the reading" on
+ * Needs review (v2's in-camera review card, replaced by the Check screen).
+ */
 fun barContent(
     result: FrameResult?,
     frozen: Boolean,
     error: String?,
     onFreeze: () -> Unit,
     onReset: () -> Unit,
+    onCheck: () -> Unit,
 ): BarContent {
     if (error != null) return BarContent("Error", LucideIcons.AlertCircle, "Something went wrong", error)
     val state = result?.state ?: ScanState.Searching
@@ -102,7 +108,8 @@ fun barContent(
                 title = "Solved",
                 sub = if (frozen) "Image frozen. You can lower the phone."
                       else "${plural(answers, "answer")} drawn on the puzzle$fixed",
-                actions = listOf(
+                actions = listOfNotNull(
+                    if (result?.capture != null) BarAction("Play", LucideIcons.Pencil, onClick = onCheck) else null,
                     BarAction(if (frozen) "Live" else "Freeze", if (frozen) LucideIcons.Play else LucideIcons.Pause,
                         primary = true, active = frozen, onClick = onFreeze),
                     BarAction("Reset", LucideIcons.Reset, onClick = onReset),
@@ -114,10 +121,13 @@ fun barContent(
             icon = LucideIcons.AlertCircle,
             title = "Couldn’t solve",
             sub = when (state.reason) {
-                ScanState.Reason.TOO_FEW_DIGITS -> "Too few digits found. Move closer."
-                ScanState.Reason.NO_UNIQUE_SOLUTION -> "Some digits may be misread. Try better light or another angle."
+                ScanState.Reason.TOO_FEW_DIGITS -> "Too few digits found. Move closer, or add the missing ones."
+                ScanState.Reason.NO_UNIQUE_SOLUTION -> "Some digits may be misread. Check them, or rescan in better light."
             },
-            actions = listOf(BarAction("Rescan", LucideIcons.Camera, primary = true, onClick = onReset)),
+            actions = listOfNotNull(
+                BarAction("Rescan", LucideIcons.Camera, primary = result?.capture == null, onClick = onReset),
+                if (result?.capture != null) BarAction("Check the reading", LucideIcons.Check, primary = true, onClick = onCheck) else null,
+            ),
         )
     }
 }

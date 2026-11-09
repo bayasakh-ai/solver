@@ -38,6 +38,7 @@ import com.bay.sudokusolver.ui.camera.DockedBar
 import com.bay.sudokusolver.ui.camera.GridOverlay
 import com.bay.sudokusolver.ui.camera.TopChrome
 import com.bay.sudokusolver.ui.camera.barContent
+import com.bay.sudokusolver.ui.check.CheckScreen
 import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
@@ -61,7 +62,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var settings: SettingsStore
     private var palette by mutableStateOf(AnswerPalette.DEFAULT)
     private var debug by mutableStateOf(false)
-    private var showSettings by mutableStateOf(false)
+    /** Which screen shows; the camera stays underneath (see Route.kt). */
+    private var nav by mutableStateOf(NavStack())
+    /** Freeze state before Check opened, restored when it closes. */
+    private var frozenBeforeCheck: Bitmap? = null
     private var camera: Camera? = null
     private var previewView: PreviewView? = null
 
@@ -89,7 +93,7 @@ class MainActivity : ComponentActivity() {
                 // status bar icons: light over the camera, dark on the Settings page
                 val view = LocalView.current
                 SideEffect {
-                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = showSettings
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !nav.onCamera
                 }
                 if (hasCameraPermission) {
                     Box(Modifier.fillMaxSize()) {
@@ -105,18 +109,19 @@ class MainActivity : ComponentActivity() {
                         }
                         GridOverlay(result, Modifier.fillMaxSize())
                         val content = barContent(result, frozen != null, error,
-                            onFreeze = ::toggleFreeze, onReset = ::resetScan)
+                            onFreeze = ::toggleFreeze, onReset = ::resetScan, onCheck = ::openCheck)
                         CameraChrome {
                             TopChrome(content, result, showDebug = debug, thumbnail = result?.warped,
-                                onSettings = { showSettings = true }, modifier = Modifier.align(Alignment.TopCenter))
+                                onSettings = { nav = nav.open(Route.Settings) }, modifier = Modifier.align(Alignment.TopCenter))
                             DockedBar(content, flashOn = if (hasFlash) torchOn else null, onFlash = ::toggleTorch,
                                 modifier = Modifier.align(Alignment.BottomCenter))
                         }
-                        if (showSettings) {
-                            BackHandler { showSettings = false }
-                            SettingsScreen(palette, debug,
-                                onPalette = ::choosePalette, onDebug = ::chooseDebug,
-                                onBack = { showSettings = false })
+                        if (!nav.onCamera) BackHandler(onBack = ::goBack)
+                        when (val route = nav.current) {
+                            Route.Camera -> Unit
+                            Route.Settings -> SettingsScreen(palette, debug,
+                                onPalette = ::choosePalette, onDebug = ::chooseDebug, onBack = ::goBack)
+                            is Route.Check -> CheckScreen(route.capture, onBack = ::goBack)
                         }
                     }
                 } else {
@@ -146,6 +151,23 @@ class MainActivity : ComponentActivity() {
         } else {
             frozen = previewView?.bitmap // null if the preview isn't streaming yet: stays live
         }
+    }
+
+    /**
+     * Play / Check the reading: hand the settled reading to the core flow. The camera
+     * freezes underneath, so Back returns to the same answers.
+     */
+    private fun openCheck() {
+        val capture = result?.capture ?: return
+        frozenBeforeCheck = frozen
+        if (frozen == null) frozen = previewView?.bitmap
+        nav = nav.open(Route.Check(capture))
+    }
+
+    private fun goBack() {
+        val leaving = nav.current
+        nav = nav.back() ?: return
+        if (leaving is Route.Check) frozen = frozenBeforeCheck
     }
 
     /** Reset / Rescan: forget the puzzle and start reading again. */

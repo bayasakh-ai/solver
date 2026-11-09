@@ -31,6 +31,7 @@ data class FrameResult(
     val steps: Array<AnswerStep>? = null, // answer colour step per cell (smoothed, hysteresis)
     val stepsMicros: Long = 0,        // time for background medians + steps (budget check)
     val orientMs: Long = 0,           // last orientation decision (4 readings, once per grid)
+    val capture: Capture? = null,     // the settled reading for Check (Solved / NeedsReview)
 ) {
     val isSharp get() = sharpness > FrameAnalyzer.SHARP_ENOUGH
 }
@@ -50,6 +51,7 @@ class FrameAnalyzer(
     private val polarity = GridPolarity()
     private var solved: SolveResult? = null
     private var solvedFrom: IntArray? = null // the consensus reading that was solved
+    private var capture: Capture? = null     // hand-off to the Check screen, one per consensus
 
     private var frames = 0
     private var windowStart = System.nanoTime()
@@ -78,6 +80,7 @@ class FrameAnalyzer(
         tracker.reset()
         solved = null
         solvedFrom = null
+        capture = null
         ink = null
         answerSteps.reset()
         orientationLock.reset()
@@ -185,6 +188,7 @@ class FrameAnalyzer(
                         tracker.reset()
                         solved = null
                         solvedFrom = null
+                        capture = null
                         answerSteps.reset()
                     }
                     orientMs = (System.nanoTime() - t0) / 1_000_000
@@ -219,7 +223,7 @@ class FrameAnalyzer(
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, state,
                     s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0,
-                    steps, stepsMicros, orientMs)
+                    steps, stepsMicros, orientMs, capture)
                 lastFound = result
                 lastFoundAt = now
             } else if (lastFound != null && now - lastFoundAt < HOLD_NANOS) {
@@ -270,8 +274,11 @@ class FrameAnalyzer(
     private fun updateSolution(isSharp: Boolean): ScanState {
         val consensus = tracker.consensus()
         if (consensus != null && !consensus.first.contentEquals(solvedFrom)) {
-            solved = SelfCorrect.solve(consensus.first, consensus.second)
+            val s = SelfCorrect.solve(consensus.first, consensus.second)
+            solved = s
             solvedFrom = consensus.first
+            capture = Capture.from(consensus.first, consensus.second, s,
+                ink?.unsure, ink?.removed?.count { it } ?: 0)
         }
         return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize)
     }

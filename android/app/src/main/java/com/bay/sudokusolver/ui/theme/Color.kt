@@ -78,10 +78,10 @@ data class SudokuColors(
     val warningCamera: Color = rgb(SignalColors.WARNING_CAMERA),
     // Reading / hold-steady outline and other amber marks on the camera.
     val readingCamera: Color = rgb(SignalColors.AMBER_CAMERA),
-    // Unsure cell: ring + light fill.
+    // Unsure cell: coral ring (a shape, so never colour alone).
     val unsureRing: Color = rgb(SignalColors.UNSURE_RING),
     val unsureFill: Color = rgb(SignalColors.UNSURE_FILL),
-    val unsureRingOnDark: Color = Ramp.Accent400,
+    val unsureRingOnDark: Color = rgb(SignalColors.UNSURE_RING_CAMERA),
     // Hint reasoning strokes (rings, sweeps, crosses, lanes, box frames).
     val hintStrokePaper: Color = rgb(SignalColors.HINT_STROKE_PAPER),
     val hintStrokeDark: Color = rgb(SignalColors.HINT_STROKE_DARK),

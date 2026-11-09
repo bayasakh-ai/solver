@@ -28,7 +28,11 @@ library or monetization pull focus from the scanner.
 
 Live AR solving (answers drawn on the camera view) stays as a quick
 "just show me the answer" mode: **answers only, no hints**. Hints live on the digital
-board. (The design files storyboard hints over a frozen camera frame; reuse their look
+board. **How the two connect (owner's choice "A", 2026-11-09):** the camera stays in
+AR after a solve; the docked bar's **Play** tile (v2's Hint slot) hands the settled
+reading (`Capture`) to Check -> Choose -> Play, and *Needs review* offers **Check the
+reading** instead of v2's in-camera review card. The camera freezes underneath, so Back
+returns to the same answers. (The design files storyboard hints over a frozen camera frame; reuse their look
 and animations, but on the board.)
 
 ### Hints
@@ -118,7 +122,8 @@ architecture and rules.
   while reading, dotted on hold steady, solid when solved, double when it needs review.
   The inner 3x3 box lines stay on the live overlay (owner's choice; the design drops
   them): thin and solid in the outline's colour, the pattern only on the outer outline.
-  Unsure cells: ring; corrected cells: underline. **Warnings are coral, always paired
+  Unsure cells: **coral** ring (`#c2412d` paper, `#FF9B85` camera; amber until
+  2026-11-09); corrected cells: underline. **Warnings are coral, always paired
   with a shape**; amber is the brand accent (buttons, reading outline, hint strokes).
 - **Palettes (measured, `AnswerInkTest`):** *Ink blue* (default) and *High contrast*.
   Ink blue stays distinct from print and all warning colours under protan, deutan and
@@ -126,10 +131,11 @@ architecture and rules.
   Gold were rejected by the same test. Any new palette must pass it.
 - Hint explanations in a bottom sheet so the puzzle stays visible.
 - Settings toggle for the debug thumbnail of the flattened grid.
-- **Still needs design:** the Check screen (after every capture, not only on failure),
-  the Choose screen (Show solution / Play with hints / Solve it myself) and the digital
-  play board with hints. The design's "Can't solve" grid and digit picker and its hint
-  sheet are the starting point for these.
+- **Core-flow screens are designed** in `design/screens/flow/` (see its README): Check,
+  fixing a cell, Choose, Play board, progressive hints and the advanced-technique
+  fallback. In them printed digits are regular sans, the player's digits semibold serif.
+  Still to design: Next hint at level 3, naked-single / last-empty-cell examples,
+  finished puzzle and mistakes-count states.
 
 ---
 
@@ -164,8 +170,8 @@ measure; numbers and reasoning in the `ink.py` docstring):
   print read 7-12 under synthetic colour casts; "paper offset x k" alone made thin
   newsprint read 7-8. The segment keeps printed <= 2.0 in both.
 - >= 12 -> user ink, removed from the binarized cell before `clean_cell` (binarize
-  unchanged, no retraining). 6-12 -> unsure: kept, cell flagged (overlay draws an orange
-  ring until the Check screen exists). < 6 -> printed.
+  unchanged, no retraining). 6-12 -> unsure: kept, cell flagged (overlay draws a coral
+  ring; Check asks about it). < 6 -> printed.
 - Safety net: fewer than 17 non-empty cells left -> skip removal for that grid.
 - Chroma comes at half resolution like YUV_420_888 (Python downsamples Cr/Cb by 2 and
   warps with corners/2; `FrameAnalyzer` reads U/V only on sharp frames that get read).
@@ -238,18 +244,22 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
                        hysteresis), contrast + colour-vision maths (pure Kotlin)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
+    Capture.kt         hand-off from the scan to Check: read vs fixed digits, confidence,
+                       second guess, unsure ink, pen count, solution (pure Kotlin)
+    Route.kt           Route (Camera / Settings / Check) + NavStack, camera always root (pure Kotlin)
     Orientation.kt     corner order, quarter-turn choice, corner tracking, lock (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
                        Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
     ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
-                       ScanChrome (status chip, docked bar, Freeze/Reset/flash), previews
+                       ScanChrome (status chip, docked bar, Play/Freeze/Reset/flash), previews
+    ui/check/          CheckScreen: Stage 2 stub (read-only grid, counts); Stage 3 builds the design
     ui/settings/       SettingsScreen (answer palette, debug thumbnail), SettingsStore
                        (SharedPreferences; debug off by default)
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
-                       OrientationTest
+                       OrientationTest, CaptureTest, RouteTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)

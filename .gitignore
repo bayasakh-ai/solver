@@ -20,3 +20,6 @@ eval_failures/
 
 # Android Studio personal settings
 android/.idea/
+
+# Editor swap files
+*.swp

@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import com.bay.sudokusolver.AnswerStep
+import com.bay.sudokusolver.Capture
+import com.bay.sudokusolver.SolveResult
 import com.bay.sudokusolver.FrameResult
 import com.bay.sudokusolver.ScanState
 import com.bay.sudokusolver.Solver
@@ -31,12 +33,19 @@ private val CORNERS = floatArrayOf(52f, 150f, 432f, 138f, 440f, 520f, 44f, 530f)
 /** The same grid with the phone turned 30°, ordered the way GridDetector.orderCorners does. */
 private val CORNERS_TURNED = floatArrayOf(178f, 98f, 472f, 268f, 302f, 562f, 8f, 392f)
 
+/** A capture of PUZZLE as the vote would hand it over (confident reads, nothing fixed). */
+private fun capture(solved: Boolean) = Capture.from(PUZZLE,
+    Array(81) { i -> if (PUZZLE[i] == 0) null else FloatArray(9) { k -> if (k == PUZZLE[i] - 1) 0.96f else 0.005f } },
+    SolveResult(PUZZLE, if (solved) SOLUTION else null, emptyList()), inkUnsure = null, inkIgnored = 0)
+
 private fun fake(state: ScanState, solved: Boolean, steps: Array<AnswerStep>? = null,
-                 unsure: BooleanArray? = null, corners: FloatArray = CORNERS) = FrameResult(
+                 unsure: BooleanArray? = null, corners: FloatArray = CORNERS,
+                 captured: Boolean = false) = FrameResult(
     corners = corners, frameWidth = 480, frameHeight = 640, warped = null, sharpness = 140.0,
     digits = 26, processMs = 5, fps = 30.0, state = state,
     puzzle = if (solved) PUZZLE else null, solution = if (solved) SOLUTION else null,
     unsure = unsure, steps = steps,
+    capture = if (captured) capture(solved) else null,
 )
 
 @Composable
@@ -86,7 +95,7 @@ private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean 
     SudokuLensTheme {
         Box(Modifier.fillMaxSize().background(background)) {
             GridOverlay(result, Modifier.fillMaxSize())
-            val content = barContent(result, frozen, error = null, onFreeze = {}, onReset = {})
+            val content = barContent(result, frozen, error = null, onFreeze = {}, onReset = {}, onCheck = {})
             com.bay.sudokusolver.ui.theme.CameraChrome {
                 TopChrome(content, result, showDebug = false, thumbnail = null, onSettings = {},
                     modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter))
@@ -108,7 +117,7 @@ private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean 
 
 @Preview(name = "Screen · Solved", widthDp = 360, heightDp = 780)
 @Composable private fun SSolved() = FullScreen(paper, fake(ScanState.Solved(1), solved = true,
-    steps = Array(81) { AnswerStep.DEEP }))
+    steps = Array(81) { AnswerStep.DEEP }, captured = true))
 
 @Preview(name = "Screen · Solved, frozen, flash on, dark screen", widthDp = 360, heightDp = 780)
 @Composable private fun SFrozen() = FullScreen(screen, fake(ScanState.Solved(0), solved = true,
@@ -116,7 +125,11 @@ private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean 
 
 @Preview(name = "Screen · Needs review", widthDp = 360, heightDp = 780)
 @Composable private fun SReview() = FullScreen(paper, fake(
-    ScanState.NeedsReview(ScanState.Reason.TOO_FEW_DIGITS), solved = false))
+    ScanState.NeedsReview(ScanState.Reason.NO_UNIQUE_SOLUTION), solved = false, captured = true))
+
+@Preview(name = "Screen · Needs review, too few digits", widthDp = 360, heightDp = 780)
+@Composable private fun SReviewFew() = FullScreen(paper, fake(
+    ScanState.NeedsReview(ScanState.Reason.TOO_FEW_DIGITS), solved = false, captured = true))
 
 @Preview(name = "Solved, phone turned 30° (answers follow the cells)", widthDp = 360, heightDp = 780)
 @Composable private fun PTurned() = Stage(paper, fake(ScanState.Solved(0), solved = true,

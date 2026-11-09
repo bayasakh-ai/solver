@@ -99,8 +99,10 @@ object SignalColors {
     const val HINT_STROKE_PAPER = 0x7D5411
     const val HINT_STROKE_DARK = 0xFACB8D
 
-    // Unsure cell: amber ring (+ light fill in the Check grid).
-    const val UNSURE_RING = 0xA06F24
+    // Unsure cell: a coral ring, the warning colour paired with the ring shape (Check
+    // design, 2026-11-09; was amber). The ring's shape tells it from the double outline.
+    const val UNSURE_RING = WARNING_PAPER
+    const val UNSURE_RING_CAMERA = WARNING_CAMERA
     const val UNSURE_FILL = 0xFFE3BF
 
     // Reference backgrounds for the contrast claims in the design notes.
