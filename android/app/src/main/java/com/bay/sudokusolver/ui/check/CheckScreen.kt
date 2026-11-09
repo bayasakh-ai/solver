@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bay.sudokusolver.AnswerStep
 import com.bay.sudokusolver.Capture
 import com.bay.sudokusolver.CellMark
 import com.bay.sudokusolver.CheckResult
@@ -86,6 +87,7 @@ fun CheckScreen(
     session: CheckSession,
     photo: Bitmap?,
     onEdit: (cell: Int, digit: Int) -> Unit,
+    onMine: (cell: Int, mine: Boolean) -> Unit,
     onBack: () -> Unit,
     onRescan: () -> Unit,
     onConfirm: () -> CheckResult,
@@ -116,7 +118,8 @@ fun CheckScreen(
             }
             Box(Modifier.align(Alignment.BottomCenter)) {
                 if (sel >= 0) {
-                    FixSheet(session, sel, image, onPick = { d -> onEdit(sel, d); sel = -1 }, onClose = { sel = -1 })
+                    FixSheet(session, sel, image, onPick = { d -> onEdit(sel, d); sel = -1 },
+                        onMine = { on -> onMine(sel, on); sel = -1 }, onClose = { sel = -1 })
                 } else {
                     BottomActions(session, problem, onRescan, onConfirm = {
                         val r = onConfirm()
@@ -157,16 +160,21 @@ private fun Segment(label: String, icon: androidx.compose.ui.graphics.vector.Ima
     }
 }
 
-/** The reading: printed digits in sans, coral ring = unsure, underline = corrected. */
+/**
+ * The reading: printed digits in sans, coral ring = unsure, underline = corrected,
+ * coral square frame = repeats in its row/column/box, the user's own digits in the
+ * player's face (Lora semibold, answer colour).
+ */
 @Composable
 private fun ReadingGrid(session: CheckSession, sel: Int, onPick: (Int) -> Unit, modifier: Modifier) {
     val colors = SudokuTheme.colors
+    val dups = session.duplicates
     SudokuGrid(modifier, background = { if (it == sel) colors.selectedCell else Color.Transparent }) { i ->
         val v = session.value(i)
         val mark = session.mark(i)
         val what = (if (v == 0) "empty" else "$v") + when (mark) {
-            CellMark.UNSURE -> ", unsure"; CellMark.CORRECTED -> ", corrected"; CellMark.CHANGED -> ", changed by you"; CellMark.NONE -> ""
-        }
+            CellMark.UNSURE -> ", unsure"; CellMark.CORRECTED -> ", corrected"; CellMark.CHANGED -> ", changed by you"; CellMark.MINE -> ", yours"; CellMark.NONE -> ""
+        } + if (i in dups) ", repeats" else ""
         Box(
             Modifier.fillMaxSize()
                 .then(if (i == sel) Modifier.border(2.dp, Classical.Ink) else Modifier)
@@ -174,8 +182,10 @@ private fun ReadingGrid(session: CheckSession, sel: Int, onPick: (Int) -> Unit, 
                 .semantics { contentDescription = cellLabel(i, what) },
             contentAlignment = Alignment.Center,
         ) {
+            if (i in dups) Box(Modifier.fillMaxSize().padding(3.dp).border(1.5.dp, colors.conflict, MaterialTheme.shapes.extraSmall))
             if (mark == CellMark.UNSURE) Box(Modifier.fillMaxSize(0.8f).border(1.5.dp, colors.unsureRing, CircleShape))
-            if (v != 0) Digit(v, underline = mark == CellMark.CORRECTED)
+            if (v != 0 && mark == CellMark.MINE) MineDigit(v)
+            else if (v != 0) Digit(v, underline = mark == CellMark.CORRECTED)
         }
     }
 }
@@ -193,6 +203,12 @@ private fun Digit(d: Int, underline: Boolean, sizeSp: Int = 20) {
 }
 
 @Composable
+private fun MineDigit(d: Int, sizeSp: Int = 21) {
+    Text("$d", style = SudokuType.PlayerDigit.copy(fontSize = sizeSp.sp, lineHeight = sizeSp.sp,
+        color = SudokuTheme.colors.answer(AnswerStep.DEEP)))
+}
+
+@Composable
 private fun Legend(session: CheckSession, modifier: Modifier) {
     val colors = SudokuTheme.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -206,6 +222,21 @@ private fun Legend(session: CheckSession, modifier: Modifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.padding(horizontal = 4.dp)) { Digit(3, underline = true, sizeSp = 14) }
                 Text("Corrected · ${session.correctedCount}", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
+            }
+        }
+        val dups = session.duplicates.size
+        if (dups > 0 || session.mineCount > 0) {
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (dups > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(22.dp).border(1.5.dp, colors.conflict, MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
+                        Text("5", style = SudokuType.PrintedDigit.copy(fontSize = 12.sp, lineHeight = 12.sp))
+                    }
+                    Text("Repeats · $dups", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
+                }
+                if (session.mineCount > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { MineDigit(4, sizeSp = 16) }
+                    Text("Yours · ${session.mineCount}", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
+                }
             }
         }
         if (session.capture.inkIgnored > 0) {
@@ -244,7 +275,9 @@ private fun BottomActions(session: CheckSession, problem: CheckResult?, onRescan
 
 private fun summary(s: CheckSession): String {
     val look = s.unsureCount + s.correctedCount
+    if (s.duplicates.isNotEmpty()) return "A digit repeats (coral frames), so one of them is misread. Tap it to fix it."
     return "${s.filled} digits read" +
+        (if (s.mineCount > 0) ", ${s.mineCount} yours" else "") +
         (if (look > 0) ", $look worth a look" else "") +
         (if (s.changedCount > 0) ", ${s.changedCount} changed by you" else "") +
         ". If the grid matches the paper, carry on."
@@ -259,10 +292,17 @@ private fun problemText(r: CheckResult) = when (r) {
 
 /** Fixing a cell: the camera's crop, why it's marked, 1-9 + Empty, the suggestion dashed. */
 @Composable
-private fun FixSheet(session: CheckSession, i: Int, photo: androidx.compose.ui.graphics.ImageBitmap?, onPick: (Int) -> Unit, onClose: () -> Unit) {
+private fun FixSheet(
+    session: CheckSession,
+    i: Int,
+    photo: androidx.compose.ui.graphics.ImageBitmap?,
+    onPick: (Int) -> Unit,
+    onMine: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
     val v = session.value(i)
-    val alt = session.suggestion(i)
-    val (title, note) = sheetText(session, i)
+    val alt = remember(session, i) { session.suggestion(i) } // up to ten small solves: once per sheet
+    val (title, note) = remember(session, i) { sheetText(session, i) }
     val shape = RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp)
     Column(
         Modifier.fillMaxWidth().shadow(16.dp, shape).clip(shape).background(Ramp.Neutral100)
@@ -283,8 +323,14 @@ private fun FixSheet(session: CheckSession, i: Int, photo: androidx.compose.ui.g
         val keys = (1..9).toList() + 0
         for (row in keys.chunked(5)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (d in row) PickerKey(d, current = d == v, dashed = d == alt, onClick = { onPick(d) }, Modifier.weight(1f))
+                for (d in row) PickerKey(d, current = d == v, dashed = d == alt, repeats = session.wouldDuplicate(i, d),
+                    onClick = { onPick(d) }, Modifier.weight(1f))
             }
+        }
+        // pencil / black pen look like print: the user says which digits are theirs
+        if (v != 0) {
+            if (session.isMine(i)) FlowButton("It’s printed", { onMine(false) }, Modifier.fillMaxWidth(), icon = LucideIcons.Grid)
+            else FlowButton("Mark as mine", { onMine(true) }, Modifier.fillMaxWidth(), icon = LucideIcons.Pencil)
         }
     }
 }
@@ -292,6 +338,17 @@ private fun FixSheet(session: CheckSession, i: Int, photo: androidx.compose.ui.g
 private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
     val v = s.value(i)
     val read = if (v == 0) "empty" else "$v"
+    if (s.suggestionSolves(i) && s.mark(i) != CellMark.CORRECTED) {
+        val d = s.suggestion(i)!!
+        val title = when {
+            i in s.duplicates -> "This $read repeats"
+            s.mark(i) == CellMark.UNSURE && v != 0 -> "Is this a $v?"
+            else -> "Read as $read"
+        }
+        return title to "${if (d == 0) "Empty" else "$d"} here gives the puzzle exactly one solution (dashed)."
+    }
+    if (i in s.duplicates) return "This $read repeats" to
+        "It is already in this cell’s row, column or box, so one of them is misread. Pick what the paper shows."
     return when (s.mark(i)) {
         CellMark.CORRECTED -> {
             val f = s.fix(i)!!
@@ -303,6 +360,7 @@ private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
             UnsureReason.INK -> "Is this printed?" to "The ink is close to a pen colour. If you wrote it, make it Empty (dashed)."
             else -> "Is this a $v?" to "Read as $v, but not confidently. It might be a ${s.capture.secondGuess[i]} (dashed)."
         }
+        CellMark.MINE -> "You wrote $v" to "Marked as yours: it goes on the board as your entry, and the puzzle is solved without it."
         CellMark.CHANGED -> (if (v == 0) "You cleared it" else "You set $v") to "Pick again if it still doesn’t match the paper."
         CellMark.NONE -> "Read as $read" to "Pick what the paper shows."
     }
@@ -321,9 +379,10 @@ private fun CellCrop(photo: androidx.compose.ui.graphics.ImageBitmap, i: Int) {
 }
 
 @Composable
-private fun PickerKey(d: Int, current: Boolean, dashed: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun PickerKey(d: Int, current: Boolean, dashed: Boolean, repeats: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val shape = MaterialTheme.shapes.small
     val coral = SudokuTheme.colors.unsureRing
+    val clash = SudokuTheme.colors.conflict
     var m = modifier.height(48.dp).clip(shape)
     m = when {
         current -> m.background(Ramp.Accent100).border(2.dp, Classical.Ink, shape)
@@ -336,7 +395,20 @@ private fun PickerKey(d: Int, current: Boolean, dashed: Boolean, onClick: () -> 
     }
     Box(
         m.clickable(role = Role.Button, onClickLabel = if (d == 0) "Make the cell empty" else "Set $d", onClick = onClick)
-            .semantics { selected = current; if (dashed) contentDescription = "${if (d == 0) "Empty" else "$d"}, suggested" },
+            .semantics {
+                selected = current
+                val name = if (d == 0) "Empty" else "$d"
+                if (dashed || repeats) contentDescription = name + (if (dashed) ", suggested" else "") + (if (repeats) ", repeats a printed $d" else "")
+            }
+            // repeats: a coral corner notch (shape + colour); the key still works
+            .drawBehind {
+                if (!repeats) return@drawBehind
+                val n = 12.dp.toPx()
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width - n, 0f); lineTo(size.width, 0f); lineTo(size.width, n); close()
+                }
+                drawPath(path, clash)
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (d == 0) Text("Empty", style = MaterialTheme.typography.bodySmall)
@@ -364,11 +436,18 @@ private fun previewSession(): CheckSession {
 @Preview(name = "Check", widthDp = 390, heightDp = 844)
 @Composable
 private fun PCheck() = SudokuLensTheme {
-    CheckScreen(previewSession(), null, { _, _ -> }, {}, {}, { CheckResult.TooFew })
+    CheckScreen(previewSession(), null, { _, _ -> }, { _, _ -> }, {}, {}, { CheckResult.TooFew })
+}
+
+@Preview(name = "Check · a repeat, a cell marked mine", widthDp = 390, heightDp = 844)
+@Composable
+private fun PCheckRepeat() = SudokuLensTheme {
+    CheckScreen(previewSession().edit(0, 5).setMine(80, true).setMine(2, true), null, { _, _ -> }, { _, _ -> }, {}, {},
+        { CheckResult.TooFew }, initialSel = 0)
 }
 
 @Preview(name = "Check · fixing a cell", widthDp = 390, heightDp = 844)
 @Composable
 private fun PCheckFix() = SudokuLensTheme {
-    CheckScreen(previewSession(), null, { _, _ -> }, {}, {}, { CheckResult.TooFew }, initialSel = 36)
+    CheckScreen(previewSession(), null, { _, _ -> }, { _, _ -> }, {}, {}, { CheckResult.TooFew }, initialSel = 36)
 }

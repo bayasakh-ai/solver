@@ -80,7 +80,7 @@ fun DrawScope.drawHint(
 
     fun write(i: Int, alpha: Float, scale: Float) {
         if (alpha <= 0f) return
-        val style = PlayerDigit.copy(fontSize = 28.sp, color = answer.copy(alpha = alpha))
+        val style = PlayerDigit.copy(fontSize = 24.sp, color = answer.copy(alpha = alpha))
         val layout = measurer.measure("${hint.digit}", style)
         val c = center(i)
         scale(scale, c) {

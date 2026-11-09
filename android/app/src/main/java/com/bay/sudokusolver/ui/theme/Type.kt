@@ -78,6 +78,16 @@ object SudokuType {
         fontFamily = Lora, fontWeight = Semibold, fontSize = 34.sp, lineHeight = 34.sp,
         fontFeatureSettings = "tnum",
     )
+    /**
+     * The player's digits on the board, the keypad and hint digits: Lora semibold.
+     * Cormorant (the design's choice) was hard to read at board size on the phone test
+     * (2026-11-09): thin hairlines and a small x-height. Lora's figures are lining by
+     * default; tabular keeps them centred in their cells.
+     */
+    val PlayerDigit = TextStyle(
+        fontFamily = Lora, fontWeight = Semibold, fontSize = 24.sp, lineHeight = 24.sp,
+        fontFeatureSettings = "lnum, tnum",
+    )
     /** Printed digits in the digital grid: regular sans, like most puzzle print. */
     val PrintedDigit = TextStyle(
         fontFamily = FontFamily.SansSerif, fontWeight = Regular, fontSize = 20.sp, lineHeight = 20.sp,

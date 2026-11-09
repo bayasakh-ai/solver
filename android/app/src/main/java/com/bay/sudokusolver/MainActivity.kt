@@ -19,7 +19,10 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -34,7 +37,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
+import com.bay.sudokusolver.ui.board.FlowButton
+import com.bay.sudokusolver.ui.newpuzzle.NewPuzzleScreen
+import com.bay.sudokusolver.ui.theme.LucideIcons
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.bay.sudokusolver.ui.camera.DockedBar
 import com.bay.sudokusolver.ui.camera.GridOverlay
 import com.bay.sudokusolver.ui.camera.TopChrome
@@ -75,6 +86,8 @@ class MainActivity : ComponentActivity() {
     private var checkPhoto by mutableStateOf<Bitmap?>(null)
     private var game by mutableStateOf<GameState?>(null)
     private var board by mutableStateOf(BoardSettings())
+    /** Play a puzzle: the difficulty being generated, null when idle. */
+    private var making by mutableStateOf<Difficulty?>(null)
     /** The app is in front: the game clock only runs then. */
     private var inFront by mutableStateOf(false)
     private var analysis: ImageAnalysis? = null
@@ -95,6 +108,11 @@ class MainActivity : ComponentActivity() {
         debug = settings.debug
         board = settings.board
         classifier = DigitClassifier(this)
+        // Android killed the process mid-game: put the board back as it was
+        savedInstanceState?.getString(KEY_GAME)?.let(SavedSession::decode)?.let { (g, n) ->
+            game = g
+            nav = n
+        }
 
         hasCameraPermission = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
@@ -110,8 +128,8 @@ class MainActivity : ComponentActivity() {
                 }
                 // the full-screen flow pages cover the camera: stop reading frames under them
                 LaunchedEffect(nav.onCamera) { setAnalyzing(nav.onCamera) }
-                if (hasCameraPermission) {
-                    Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize()) {
+                    if (hasCameraPermission) {
                         AndroidView(
                             factory = { ctx -> PreviewView(ctx).also { previewView = it; startCamera(it) } },
                             modifier = Modifier.fillMaxSize()
@@ -124,38 +142,51 @@ class MainActivity : ComponentActivity() {
                         }
                         GridOverlay(result, Modifier.fillMaxSize())
                         val content = barContent(result, frozen != null, error,
-                            onFreeze = ::toggleFreeze, onReset = ::resetScan, onCheck = ::openCheck)
+                            onFreeze = ::toggleFreeze, onReset = ::resetScan, onCheck = ::openCheck,
+                            onPlayPuzzle = { nav = nav.open(Route.NewPuzzle) })
                         CameraChrome {
                             TopChrome(content, result, showDebug = debug, thumbnail = result?.warped,
                                 onSettings = { nav = nav.open(Route.Settings) }, modifier = Modifier.align(Alignment.TopCenter))
                             DockedBar(content, flashOn = if (hasFlash) torchOn else null, onFlash = ::toggleTorch,
                                 modifier = Modifier.align(Alignment.BottomCenter))
                         }
-                        if (!nav.onCamera) BackHandler(onBack = ::goBack)
-                        when (val route = nav.current) {
-                            Route.Camera -> Unit
-                            Route.Settings -> SettingsScreen(palette, debug, board,
-                                onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard, onBack = ::goBack)
-                            is Route.Check -> checkSession?.let { session ->
-                                CheckScreen(session, checkPhoto,
-                                    onEdit = { i, d -> checkSession = session.edit(i, d) },
-                                    onBack = ::goBack, onRescan = ::rescanFromCheck, onConfirm = ::confirmReading)
-                            }
-                            is Route.Choose -> ChooseScreen(route.puzzle,
-                                resumable = game?.let { it.puzzle == route.puzzle && it.canUndo } == true,
-                                onPlay = { mode -> play(route.puzzle, mode) }, onBack = ::goBack, onCamera = ::backToCamera)
-                            is Route.Play -> PlayScreen(
-                                game = game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle),
-                                mode = route.mode, settings = board, running = inFront,
-                                update = { f -> game = f(game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle)) },
-                                onBack = ::goBack,
-                                onSettings = { nav = nav.open(Route.Settings) },
-                                onPlayInstead = { nav = nav.back()!!; play(route.puzzle, PlayMode.HINTS) })
+                    } else {
+                        // no camera: generated puzzles still work
+                        Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Camera permission is needed to scan puzzles.")
+                            FlowButton("Play a puzzle", { nav = nav.open(Route.NewPuzzle) }, icon = LucideIcons.Grid, primary = true)
                         }
                     }
-                } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Camera permission is needed to scan puzzles.")
+                    if (!nav.onCamera) BackHandler(onBack = ::goBack)
+                    when (val route = nav.current) {
+                        Route.Camera -> Unit
+                        Route.NewPuzzle -> NewPuzzleScreen(making,
+                            inProgress = game?.takeIf { it.puzzle.source == PuzzleSource.GENERATED && !it.finished },
+                            onPick = ::newPuzzle,
+                            onResume = { game?.let { nav = nav.open(Route.Play(it.puzzle, PlayMode.HINTS)) } },
+                            onBack = ::goBack)
+                        Route.Settings -> SettingsScreen(palette, debug, board,
+                            onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard, onBack = ::goBack)
+                        is Route.Check -> checkSession?.let { session ->
+                            CheckScreen(session, checkPhoto,
+                                onEdit = { i, d -> checkSession = session.edit(i, d) },
+                                onMine = { i, on -> checkSession = session.setMine(i, on) },
+                                onBack = ::goBack, onRescan = ::startOver, onConfirm = ::confirmReading)
+                        }
+                        is Route.Choose -> ChooseScreen(route.puzzle,
+                            resumable = game?.let { it.puzzle == route.puzzle && it.canUndo } == true,
+                            onPlay = { mode -> play(route.puzzle, mode, route.start) }, onBack = ::goBack, onCamera = ::backToCamera,
+                            yours = route.start.count { it != 0 })
+                        is Route.Play -> PlayScreen(
+                            game = game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle),
+                            mode = route.mode, settings = board, running = inFront,
+                            update = { f -> game = f(game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle)) },
+                            onBack = ::goBack,
+                            onSettings = { nav = nav.open(Route.Settings) },
+                            onPlayInstead = { nav = nav.back()!!; play(route.puzzle, PlayMode.HINTS) },
+                            onScanAnother = ::startOver,
+                            onPlayAnother = { startOver(); nav = nav.open(Route.NewPuzzle) })
                     }
                 }
             }
@@ -207,13 +238,16 @@ class MainActivity : ComponentActivity() {
     /** Looks right: on to Choose when the fixed grid is a puzzle; otherwise Check says why. */
     private fun confirmReading(): CheckResult {
         val r = checkSession?.confirm() ?: return CheckResult.TooFew
-        if (r is CheckResult.Ready) nav = nav.open(Route.Choose(r.puzzle))
+        if (r is CheckResult.Ready) nav = nav.open(Route.Choose(r.puzzle, r.start))
         return r
     }
 
-    /** Choose -> Play. The game in progress for this puzzle carries on; Show solution doesn't touch it. */
-    private fun play(puzzle: Puzzle, mode: PlayMode) {
-        if (mode != PlayMode.SOLUTION && game?.puzzle != puzzle) game = GameState(puzzle)
+    /**
+     * Choose -> Play. The game in progress for this puzzle carries on; Show solution
+     * doesn't touch it. A new game starts from the digits the user wrote on paper ([start]).
+     */
+    private fun play(puzzle: Puzzle, mode: PlayMode, start: IntArray = IntArray(81)) {
+        if (mode != PlayMode.SOLUTION && game?.puzzle != puzzle) game = GameState(puzzle, start)
         nav = nav.open(Route.Play(puzzle, mode))
     }
 
@@ -229,11 +263,38 @@ class MainActivity : ComponentActivity() {
         frozen = frozenBeforeCheck
     }
 
-    private fun rescanFromCheck() {
+    /** Rescan / Scan another: back to a live camera with nothing remembered from the last scan. */
+    private fun startOver() {
         nav = NavStack()
         checkSession = null
         checkPhoto = null
+        frozenBeforeCheck = null
         resetScan()
+    }
+
+    /**
+     * Play a puzzle: generate one HintEngine rates [d] (tens of ms on a desktop JVM, so
+     * off the main thread), then open it. Backing out meanwhile drops the result.
+     */
+    private fun newPuzzle(d: Difficulty) {
+        if (making != null) return
+        making = d
+        lifecycleScope.launch {
+            val p = withContext(Dispatchers.Default) { Generator.generate(d) }
+            making = null
+            if (p != null && nav.current == Route.NewPuzzle) {
+                game = GameState(p)
+                nav = nav.open(Route.Play(p, PlayMode.HINTS))
+            }
+        }
+    }
+
+    /** Process death: keep the game (and the open board) as text; see SavedSession. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val g = game ?: return
+        val playing = nav.stack.filterIsInstance<Route.Play>().lastOrNull { it.puzzle == g.puzzle && it.mode != PlayMode.SOLUTION }
+        outState.putString(KEY_GAME, SavedSession.encode(g, playing?.mode))
     }
 
     /** Pause frame analysis while a full-screen page covers the camera; resume on return. */
@@ -305,6 +366,10 @@ class MainActivity : ComponentActivity() {
             // follow the real torch state (CameraX turns it off when the camera closes)
             cam.cameraInfo.torchState.observe(this) { torchOn = it == TorchState.ON }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private companion object {
+        const val KEY_GAME = "game"
     }
 
     override fun onDestroy() {

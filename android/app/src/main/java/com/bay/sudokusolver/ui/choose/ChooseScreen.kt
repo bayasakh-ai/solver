@@ -49,7 +49,15 @@ import com.bay.sudokusolver.ui.theme.SudokuType
 /* Puzzle ready (design/screens/flow/Choose.dc.html): difficulty and three ways to play. */
 
 @Composable
-fun ChooseScreen(puzzle: Puzzle, resumable: Boolean, onPlay: (PlayMode) -> Unit, onBack: () -> Unit, onCamera: () -> Unit) {
+fun ChooseScreen(
+    puzzle: Puzzle,
+    resumable: Boolean,
+    onPlay: (PlayMode) -> Unit,
+    onBack: () -> Unit,
+    onCamera: () -> Unit,
+    /** Digits the user wrote on paper (Mark as mine): the board starts with them. */
+    yours: Int = 0,
+) {
     val difficulty = puzzle.difficulty
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())) {
@@ -82,17 +90,20 @@ fun ChooseScreen(puzzle: Puzzle, resumable: Boolean, onPlay: (PlayMode) -> Unit,
                         }
                     }
                     Fact("Hardest step") { Text(difficulty.hardestStep, style = MaterialTheme.typography.bodySmall) }
-                    Fact("To fill") { Text("${puzzle.toFill} of 81 cells", style = MaterialTheme.typography.bodySmall) }
+                    Fact("To fill") {
+                        Text("${puzzle.toFill - yours} of 81 cells" + if (yours > 0) " ($yours yours already)" else "",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 
             Column(Modifier.padding(horizontal = 22.dp).padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Option(LucideIcons.Lightbulb, "Play with hints",
-                    if (resumable) "Carry on where you left off. When you’re stuck, a hint shows you where to look, then why."
+                    if (resumable || yours > 0) "Carry on where you left off. When you’re stuck, a hint shows you where to look, then why."
                     else "Solve it on the phone. When you’re stuck, a hint shows you where to look, then why.",
                     primary = true) { onPlay(PlayMode.HINTS) }
                 Option(LucideIcons.Pencil, "Solve it myself",
-                    if (resumable) "Carry on, without hints. You can still ask for one later."
+                    if (resumable || yours > 0) "Carry on, without hints. You can still ask for one later."
                     else "The same board without hints. You can still ask for one later.") { onPlay(PlayMode.MYSELF) }
                 Option(LucideIcons.Eye, "Show solution", "Fill in all ${puzzle.toFill} answers now.") { onPlay(PlayMode.SOLUTION) }
             }

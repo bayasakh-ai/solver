@@ -51,4 +51,25 @@ class RouteTest {
     fun theCameraIsAlwaysTheRoot() {
         NavStack(listOf(Route.Settings))
     }
+
+    private val p3 = Puzzle(Solver.parse("005031040001000008794600000002000003900000005300000800000003517500000600070820900"),
+        Solver.parse("685731249231549768794682351462958173918376425357214896829463517543197682176825934"))
+
+    @Test fun chooseComparesTheStartToo() {
+        val a = Route.Choose(p3, IntArray(81).also { it[0] = 6 })
+        assertEquals(a, Route.Choose(p3, IntArray(81).also { it[0] = 6 }))
+        assertTrue(a != Route.Choose(p3))
+    }
+
+    @Test fun savedSessionReopensTheBoard() {
+        val g = GameState(p3).enter(0, 6).tick(5000)
+        val (back, nav) = SavedSession.decode(SavedSession.encode(g, PlayMode.MYSELF))!!
+        assertEquals(6, back.value(0))
+        assertEquals(listOf(Route.Camera, Route.Play(p3, PlayMode.MYSELF)), nav.stack)
+        // not on the board when killed: the game is kept, the camera shows
+        assertEquals(NavStack(), SavedSession.decode(SavedSession.encode(g, null))!!.second)
+        // Show solution is never restored as a game screen
+        assertEquals(NavStack(), SavedSession.decode(SavedSession.encode(g, PlayMode.SOLUTION))!!.second)
+        assertNull(SavedSession.decode("HINTS\ngarbage"))
+    }
 }

@@ -118,6 +118,8 @@ fun SettingsScreen(
                         board.highlightBox) to { v: Boolean -> board.copy(highlightBox = v) },
                     Triple("Highlight identical numbers", "Marks every cell with the selected digit.",
                         board.highlightSame) to { v: Boolean -> board.copy(highlightSame = v) },
+                    Triple("Remaining counts", "Shows on each keypad digit how many more the board needs.",
+                        board.showRemaining) to { v: Boolean -> board.copy(showRemaining = v) },
                 )
                 for ((info, change) in rows) {
                     ToggleRow(info.first, info.second, info.third, { onBoard(change(it)) }, Modifier)
@@ -203,7 +205,7 @@ private fun ToggleRow(title: String, text: String, on: Boolean, onChange: (Boole
     }
 }
 
-@Preview(name = "Settings", widthDp = 360, heightDp = 1400)
+@Preview(name = "Settings", widthDp = 360, heightDp = 1500)
 @Composable
 private fun SettingsPreview() {
     SudokuLensTheme {

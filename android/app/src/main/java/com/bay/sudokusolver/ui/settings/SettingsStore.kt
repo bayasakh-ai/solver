@@ -33,6 +33,7 @@ class SettingsStore(context: Context) {
                 highlightLines = prefs.getBoolean(KEY_LINES, d.highlightLines),
                 highlightBox = prefs.getBoolean(KEY_BOX, d.highlightBox),
                 highlightSame = prefs.getBoolean(KEY_SAME, d.highlightSame),
+                showRemaining = prefs.getBoolean(KEY_REMAINING, d.showRemaining),
             )
         }
         set(v) = prefs.edit()
@@ -42,6 +43,7 @@ class SettingsStore(context: Context) {
             .putBoolean(KEY_LINES, v.highlightLines)
             .putBoolean(KEY_BOX, v.highlightBox)
             .putBoolean(KEY_SAME, v.highlightSame)
+            .putBoolean(KEY_REMAINING, v.showRemaining)
             .apply()
 
     private companion object {
@@ -53,5 +55,6 @@ class SettingsStore(context: Context) {
         const val KEY_LINES = "board_highlight_lines"
         const val KEY_BOX = "board_highlight_box"
         const val KEY_SAME = "board_highlight_same"
+        const val KEY_REMAINING = "board_show_remaining"
     }
 }

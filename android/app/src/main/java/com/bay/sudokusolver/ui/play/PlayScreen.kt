@@ -38,7 +38,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
+import com.bay.sudokusolver.FinishSummary
+import com.bay.sudokusolver.PuzzleSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -78,7 +82,6 @@ import com.bay.sudokusolver.ui.board.IconButton
 import com.bay.sudokusolver.ui.board.SudokuGrid
 import com.bay.sudokusolver.ui.board.cellLabel
 import com.bay.sudokusolver.ui.theme.Classical
-import com.bay.sudokusolver.ui.theme.Cormorant
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
 import com.bay.sudokusolver.ui.theme.SudokuLensTheme
@@ -116,6 +119,8 @@ fun PlayScreen(
     onBack: () -> Unit,
     onSettings: () -> Unit,
     onPlayInstead: () -> Unit,
+    onScanAnother: () -> Unit = {},
+    onPlayAnother: () -> Unit = {},
     initialHintLevel: Int = 0,
 ) {
     val solution = mode == PlayMode.SOLUTION
@@ -123,6 +128,13 @@ fun PlayScreen(
     var notesMode by remember { mutableStateOf(false) }
     var open by remember {
         mutableStateOf(if (initialHintLevel > 0) OpenHint(game.nextHint(), initialHintLevel.coerceAtMost(3)) else null)
+    }
+    // Solved pop-up: once per finished game; closing it leaves the finished board in view
+    var finishSeen by rememberSaveable(game.puzzle.hashCode()) { mutableStateOf(false) }
+    val summary = if (solution) null else game.summary()
+    if (summary != null && !finishSeen) {
+        FinishDialog(summary, onClose = { finishSeen = true },
+            onScanAnother = { finishSeen = true; onScanAnother() }, onPlayAnother = { finishSeen = true; onPlayAnother() })
     }
     // timer: one second at a time while the screen is showing and the app is in front
     LaunchedEffect(running, solution, game.finished) {
@@ -164,7 +176,7 @@ fun PlayScreen(
                         },
                     )
                     else -> Keypad(
-                        game, mode, notesMode,
+                        game, mode, notesMode, settings.showRemaining,
                         onUndo = { update { it.undo() } },
                         onErase = { if (sel >= 0) update { it.erase(sel) } },
                         onNotes = { notesMode = !notesMode },
@@ -196,7 +208,7 @@ private fun Header(game: GameState, mode: PlayMode, settings: BoardSettings, onB
     ) {
         BackButton("Back", onBack)
         Column(Modifier.weight(1f)) {
-            Text("SCANNED PUZZLE", style = SudokuType.Kicker.copy(fontSize = 11.sp), color = Classical.AccentText)
+            Text(if (game.puzzle.source == PuzzleSource.GENERATED) "NEW PUZZLE" else "SCANNED PUZZLE", style = SudokuType.Kicker.copy(fontSize = 11.sp), color = Classical.AccentText)
             val title = when {
                 mode == PlayMode.SOLUTION -> "Solution"
                 game.finished -> "Solved"
@@ -295,13 +307,8 @@ private fun Board(
     }
 }
 
-/**
- * The player's digits on the board: semibold serif (Cormorant, as in the design). Lining
- * figures: Cormorant's default old-style ones drop 3, 5, 7, 9 below the line and make 1
- * look like a small capital, which reads badly in a grid.
- */
-internal val PlayerDigit = TextStyle(fontFamily = Cormorant, fontWeight = FontWeight.SemiBold, fontSize = 27.sp,
-    lineHeight = 27.sp, fontFeatureSettings = "lnum, tnum")
+/** The player's digits: Lora semibold (SudokuType.PlayerDigit, changed from Cormorant after the phone test). */
+internal val PlayerDigit = SudokuType.PlayerDigit
 
 @Composable
 private fun NotesGrid(notes: List<Int>, modifier: Modifier) {
@@ -360,7 +367,7 @@ private fun SolutionLegend(style: TextStyle) {
             Text("Printed", style = style, color = Classical.TextSecondary)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("3", style = PlayerDigit.copy(fontSize = 20.sp, color = colors.answer(AnswerStep.DEEP)))
+            Text("3", style = PlayerDigit.copy(fontSize = 18.sp, lineHeight = 18.sp, color = colors.answer(AnswerStep.DEEP)))
             Text("Solution", style = style, color = Classical.TextSecondary)
         }
     }
@@ -382,6 +389,7 @@ private fun Keypad(
     game: GameState,
     mode: PlayMode,
     notesMode: Boolean,
+    showRemaining: Boolean,
     onUndo: () -> Unit,
     onErase: () -> Unit,
     onNotes: () -> Unit,
@@ -402,7 +410,7 @@ private fun Keypad(
                 for (c in 1..3) {
                     val d = row * 3 + c
                     val left = game.remaining(d)
-                    DigitKey(d, left, enabled = left > 0 && !done, onClick = { onDigit(d) }, Modifier.weight(1f).fillMaxHeight())
+                    DigitKey(d, left, showRemaining, enabled = left > 0 && !done, onClick = { onDigit(d) }, Modifier.weight(1f).fillMaxHeight())
                 }
             }
         }
@@ -432,18 +440,64 @@ private fun Tool(icon: ImageVector, label: String, enabled: Boolean, onClick: ()
 }
 
 @Composable
-private fun DigitKey(d: Int, left: Int, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun DigitKey(d: Int, left: Int, showLeft: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val shape = MaterialTheme.shapes.small
     Box(
         modifier.clip(shape).border(1.dp, Classical.Ink.copy(alpha = 0.22f), shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "$d, $left left" }
+            .semantics { contentDescription = if (showLeft) "$d, $left left" else "$d" }
             .alpha(if (enabled) 1f else 0.45f),
         contentAlignment = Alignment.Center,
     ) {
-        Text("$d", style = PlayerDigit.copy(fontSize = 30.sp, lineHeight = 30.sp))
-        if (left > 0) Text("$left", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, fontFeatureSettings = "tnum"),
+        Text("$d", style = PlayerDigit.copy(fontSize = 26.sp, lineHeight = 26.sp))
+        if (showLeft && left > 0) Text("$left", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, fontFeatureSettings = "tnum"),
             color = Classical.TextSecondary, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 6.dp))
+    }
+}
+
+// --- solved pop-up -----------------------------------------------------------------
+
+/** "Solved!" with time, hints used and mistakes; Scan another / Play another. Not yet in the design files. */
+@Composable
+private fun FinishDialog(summary: FinishSummary, onClose: () -> Unit, onScanAnother: () -> Unit, onPlayAnother: () -> Unit) {
+    Dialog(onDismissRequest = onClose) {
+        Column(
+            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.background)
+                .border(1.dp, Classical.AccentStroke, MaterialTheme.shapes.small)
+                .padding(start = 22.dp, end = 10.dp, top = 6.dp, bottom = 22.dp)
+                .semantics { contentDescription = "Puzzle solved" },
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("PUZZLE COMPLETE", style = SudokuType.Kicker, color = Classical.AccentText, modifier = Modifier.weight(1f))
+                IconButton(LucideIcons.X, "Close", onClose)
+            }
+            Column(Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Solved!", style = MaterialTheme.typography.displaySmall)
+                Text(summary.line, style = MaterialTheme.typography.bodyMedium, color = Classical.TextBody2)
+                Row(Modifier.fillMaxWidth().border(1.dp, Classical.Divider, MaterialTheme.shapes.small).padding(vertical = 12.dp)) {
+                    FinishFact(LucideIcons.Clock, "Time", summary.time, Modifier.weight(1f))
+                    FinishFact(LucideIcons.Lightbulb, "Hints", summary.hints, Modifier.weight(1f))
+                    FinishFact(LucideIcons.AlertCircle, "Mistakes", summary.mistakesText, Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowButton("Scan another", onScanAnother, Modifier.weight(1f), icon = LucideIcons.Camera)
+                    FlowButton("Play another", onPlayAnother, Modifier.weight(1f), icon = LucideIcons.Grid, primary = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinishFact(icon: ImageVector, label: String, value: String, modifier: Modifier) {
+    Column(
+        modifier.semantics(mergeDescendants = true) { contentDescription = "$label: $value" },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(icon, null, tint = Classical.TextBody2, modifier = Modifier.size(18.dp))
+        Text(value, style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = Classical.Ink)
     }
 }
 
@@ -635,6 +689,14 @@ private fun PHintAdvanced() = SudokuLensTheme {
 @Composable
 private fun PSolution() = SudokuLensTheme {
     PlayScreen(GameState(previewPuzzle), PlayMode.SOLUTION, BoardSettings(), false, {}, {}, {}, {})
+}
+
+@Preview(name = "Play · solved", widthDp = 390, heightDp = 844)
+@Composable
+private fun PSolved() = SudokuLensTheme {
+    var g = designGame().hintOpened()
+    for (i in 0 until 81) if (!g.isGiven(i)) g = g.reveal(i)
+    PlayScreen(g, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {})
 }
 
 /** Interactive in Android Studio's preview / PreviewActivity: moves are kept. */

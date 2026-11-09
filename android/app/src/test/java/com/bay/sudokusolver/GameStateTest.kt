@@ -87,4 +87,68 @@ class GameStateTest {
         assertEquals(puzzle, Puzzle(puzzle.givens.copyOf(), puzzle.solution.copyOf()))
         assertEquals(Difficulty.HARD, puzzle.difficulty)
     }
+
+    @Test fun startsFromTheDigitsOnPaperRightOrWrong() {
+        val start = IntArray(81).also { it[0] = 6; it[1] = 1; it[2] = 9 } // r1c2 wrong (it's 8); r1c3 is printed
+        val g = GameState(puzzle, start)
+        assertEquals(6, g.value(0))
+        assertEquals(1, g.value(1))                    // kept as written
+        assertEquals(5, g.value(2))                    // a printed cell ignores the paper
+        assertEquals(0, g.mistakes)                    // not made on this board
+        assertFalse(g.canUndo)
+        val hint = g.nextHint()                        // never targets a filled cell
+        assertTrue(hint is HintResult.Step && hint.hint.target !in setOf(0, 1))
+    }
+
+    @Test fun summaryOnceFinished() {
+        assertEquals(null, fresh.summary())
+        var g = fresh.hintOpened().enter(0, 1).tick(65_000)
+        for (i in 0 until 81) if (!g.isGiven(i)) g = g.enter(i, puzzle.solution[i])
+        val s = g.summary()!!
+        assertEquals("01:05", s.time)
+        assertEquals("1 hint", s.hints)
+        assertEquals("1 mistake", s.mistakesText)
+        assertEquals("No hints", FinishSummary(0, 0, 2).hints)
+        assertEquals("Clean solve: no hints, no mistakes.", FinishSummary(0, 0, 0).line)
+    }
+
+    @Test fun encodeDecodeRoundTrip() {
+        val g = fresh.enter(0, 1).toggleNote(1, 8).toggleNote(1, 3).enter(6, 7).hintOpened().tick(42_000)
+        val back = GameState.decode(g.encode())!!
+        assertEquals(g.puzzle, back.puzzle)
+        assertEquals(PuzzleSource.SCANNED, back.puzzle.source)
+        assertEquals(g.entries.toList(), back.entries.toList())
+        assertEquals(listOf(3, 8), back.notesOf(1))
+        assertEquals(g.mistakes, back.mistakes)
+        assertEquals(1, back.hintsUsed)
+        assertEquals(42_000, back.elapsedMs)
+        // undo still works after a restore, step by step
+        assertEquals(0, back.undo().value(6))
+        assertEquals(listOf(8), back.undo().undo().notesOf(1))
+        assertFalse(back.undo().undo().undo().undo().canUndo)
+    }
+
+    @Test fun generatedSourceSurvivesAndUndoIsTrimmed() {
+        var g = GameState(Puzzle(puzzle.givens, puzzle.solution, PuzzleSource.GENERATED))
+        repeat(150) { g = g.toggleNote(0, 1) }
+        val back = GameState.decode(g.encode())!!
+        assertEquals(PuzzleSource.GENERATED, back.puzzle.source)
+        var n = 0
+        var u = back
+        while (u.canUndo) { u = u.undo(); n++ }
+        assertEquals(GameState.SAVED_UNDO, n)
+        assertTrue(g.encode().length < 40_000)
+    }
+
+    @Test fun decodeRejectsAnythingBroken() {
+        val text = fresh.enter(0, 6).encode()
+        assertEquals(null, GameState.decode(""))
+        assertEquals(null, GameState.decode("nonsense"))
+        assertEquals(null, GameState.decode(text.replace("game v1", "game v9")))
+        assertEquals(null, GameState.decode(text.lines().take(4).joinToString("\n")))
+        // an entry on a printed cell (r1c3 is a printed 5) can't come from a real game
+        val lines = text.lines().toMutableList()
+        lines[5] = lines[5].substring(0, 2) + "9" + lines[5].substring(3)
+        assertEquals(null, GameState.decode(lines.joinToString("\n")))
+    }
 }

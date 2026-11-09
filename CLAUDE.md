@@ -86,9 +86,10 @@ digits must form a valid puzzle with exactly one solution).
   skipped, not read as answers. Crossed-out/erased digits are uncertain → ask.
 
 ### Puzzle library (v1.1)
-Built-in puzzles using the same play screen as scanned ones. The generator exists
-(`synth.random_puzzle`); difficulty comes from the hint engine. Features: difficulty
-levels, daily puzzle, pencil notes, undo, timer, streaks.
+Built-in puzzles using the same play screen as scanned ones. The generator is ported
+to Kotlin (`Generator.kt`, from `synth.random_puzzle`) and already powers "Play a
+puzzle" (Stage 4); difficulty comes from the hint engine. Still to build: daily puzzle,
+streaks, a saved library. Pencil notes, undo, timer exist on the board.
 
 ### Monetization (v1.2, only once there are users)
 - Never cover the camera view or the puzzle during play with ads.
@@ -133,7 +134,8 @@ architecture and rules.
 - Settings toggle for the debug thumbnail of the flattened grid.
 - **Core-flow screens are designed** in `design/screens/flow/` (see its README): Check,
   fixing a cell, Choose, Play board, progressive hints and the advanced-technique
-  fallback. In them printed digits are regular sans, the player's digits semibold serif.
+  fallback. In them printed digits are regular sans, the player's digits semibold serif
+  (Cormorant in the design; **Lora semibold in the app** since Stage 4, see below).
   Still to design: Next hint at level 3, naked-single / last-empty-cell examples,
   finished puzzle and mistakes-count states (built simply for now, see below).
 - **Core flow built (Stage 3, 2026-11-09)**: Check (Reading/Photo, tap-to-fix picker),
@@ -162,11 +164,44 @@ architecture and rules.
     entry blocks them: "A digit you entered doesn't fit" with the count, not the place.
   - Level 3 -> Keep playing writes the digit. Naked single / last empty cell reuse the
     hidden-single marks (frame, rings, glow, write). Animations off -> still frame.
-  - Player digits use Cormorant **lining figures** (`lnum`): its old-style default drops
-    3/5/7/9 below the line.
   - Frame analysis pauses while a full-screen page covers the camera; the game clock
     runs only while the app is in front.
-  - Not yet: saving a game across process death, the puzzle library (v1.1).
+- **Stage 4 (2026-11-09, fixes from the owner's phone test):**
+  - **Player digits, keypad and hint digits: Lora semibold** (`SudokuType.PlayerDigit`),
+    not Cormorant: Cormorant's hairlines and small x-height read badly at board size.
+    Printed digits stay regular sans; answers on the camera were already Lora.
+  - **Solved pop-up**: "Solved!" with time, hints, mistakes (`FinishSummary`; shown once
+    per game, survives rotation/process death); *Scan another* (live camera, scan
+    forgotten) / *Play another* (difficulty picker). Closing it leaves the solved board.
+  - **Play a puzzle** (`Route.NewPuzzle`, `ui/newpuzzle/`): a tile on the camera bar
+    while Searching (and on the no-camera-permission screen). Pick a difficulty ->
+    `Generator.generate` digs a random grid and **refills any hole that would make
+    HintEngine rate it harder** than chosen, then retries until the rating is exact.
+    So the rating is the hint engine's by construction (GeneratorTest: 40/40 seeds).
+    Givens floor: Easy 36, Medium 30, Tricky 26, Hard none (ends at 23-26). Desktop
+    JVM ~2-53 ms per puzzle; runs off the main thread. A generated game in progress is
+    offered as Carry on. Header kicker: "New puzzle" vs "Scanned puzzle".
+  - **Mark as mine** (Check, fix sheet): the user says a digit is their writing (pencil,
+    black pen: colour can't tell). It stays on the Check grid in the player's face,
+    leaves the puzzle (solved from printed digits only) and starts the board as the
+    player's entry, **right or wrong, never fixed, not counted as a mistake, not
+    undoable**. A self-corrected cell marked as mine goes back to what the camera read
+    (self-correction is for printed digits only). `Capture.userEntries` is the hand-off
+    slot for the v1.1 handwriting model; the scanner leaves it empty for now.
+  - **Duplicates in Check**: printed digits that repeat get the coral inset frame at
+    once (same mark as Play's conflicts) and the summary says so. The user's own digits
+    don't count. Picker: a key that would repeat a printed digit gets a **coral corner
+    notch** (shape + colour), still tappable.
+  - **Solving suggestion**: while the printed digits don't have exactly one solution,
+    the picker tries 1-9 and Empty in the cell and dashes the choice that makes them
+    unique. Several work: the scan's value (undoes a bad edit), else the second guess,
+    else the only digit. None/ambiguous: the old dashed rules.
+  - **Remaining counts** on the keypad: Settings -> Game board, on by default.
+  - **Process death**: `onSaveInstanceState` keeps the game as plain text
+    (`GameState.encode`, `SavedSession`): board, notes, mistakes, hints, time, last 100
+    undo steps (~33 KB max). The open board (not Show solution) reopens over the camera.
+    Check isn't saved (the photo is too big for a Bundle; rescanning is quick). A game
+    is not kept after the user closes the app (that's the v1.1 library).
 
 ---
 
@@ -280,6 +315,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     Route.kt           Route (Camera / Settings / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
     Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
+    Generator.kt       puzzles rated exactly as chosen (port of synth.random_puzzle + HintEngine) (pure Kotlin)
     HintEngine.kt      hints as data (last empty cell, hidden/naked single, advanced fallback),
                        difficulty rating (pure Kotlin)
     GameState.kt       Puzzle, BoardSettings, the board: entries, notes, undo, mistakes,
@@ -292,6 +328,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ui/board/          shared SudokuGrid, flow header, outlined buttons
     ui/check/          CheckScreen (Reading/Photo, fix sheet), GridPhoto (flattened colour still, OpenCV)
     ui/choose/         ChooseScreen (difficulty, three ways to play)
+    ui/newpuzzle/      NewPuzzleScreen (Play a puzzle: pick a difficulty, Carry on)
     ui/play/           PlayScreen (board, keypad, hint sheet, Show solution), HintOverlay (hint marks
                        + Show me keyframes)
     ui/settings/       SettingsScreen (answer palette, game board, debug thumbnail), SettingsStore
@@ -301,7 +338,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
-                       GameStateTest
+                       GameStateTest, GeneratorTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)

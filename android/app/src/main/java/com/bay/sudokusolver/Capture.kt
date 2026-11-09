@@ -24,6 +24,13 @@ class Capture(
     val inkIgnored: Int,
     /** Unique solution of [digits], or null when the scan needs review. */
     val solution: IntArray?,
+    /**
+     * Digits the user wrote (0 elsewhere), kept apart from the printed [digits]: Check
+     * starts "Mark as mine" from these and hands them to the board as the player's
+     * entries. The scanner leaves it empty for now: coloured pen is removed before
+     * reading and pencil/black pen look like print (v1.1's handwriting model fills it).
+     */
+    val userEntries: IntArray = IntArray(81),
 ) {
     val solved: Boolean get() = solution != null
     val corrected: Set<Int> get() = fixes.mapTo(HashSet()) { it.cell }
