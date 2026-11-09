@@ -222,8 +222,26 @@ architecture and rules.
    someone has started still scans (see "Ignore user ink" below).
 3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
    puzzle library, daily puzzle, difficulty rating.
-4. **v1.2:** monetization.
+4. **v1.2:** monetization; continuous learning for the digit model (see below, not now).
 5. **Later:** iOS (see iOS plan).
+
+### Continuous learning for the digit model (v1.2, not now)
+
+- **Data:** Check corrections (cell crop + corrected digit) and "Mark as mine" cells
+  (handwritten labels). Only keep a correction if the final puzzle has exactly one
+  solution, so sudoku rules validate the labels.
+- **Approach:** opt-in upload of 28x28 crops + labels; retrain offline with the Python
+  pipeline, mixing real and synthetic data; ship a new model only if it beats the
+  current one on the fixed real-photo set and passes the parity tests
+  (`DigitClassifierTest`, `test_cells.bin`); deliver via app update or a downloadable
+  model.
+- **Optional:** on-device personal memory (reuse a user's earlier correction when a new
+  cell looks almost identical).
+- **Not allowed:** automatic on-device training without an evaluation gate.
+- **Requirements:** consent, privacy policy, Play data-safety form (shared with
+  monetization).
+- **Note:** local-only collection of corrections could move to v1.1 alongside the
+  handwriting model, since "Mark as mine" feeds both.
 
 ### Ignore user ink (v1, built 2026-11-08 for coloured pen; pencil not yet)
 
