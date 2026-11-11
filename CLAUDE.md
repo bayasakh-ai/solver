@@ -1,4 +1,8 @@
-# Sudoku Scanner & Solver
+# Sudofolio — Sudoku Scanner & Solver
+
+**Name:** Sudofolio (launcher name `app_name`, was "Sudoku solver"; working name "Sudoku Lens"; renamed 2026-11-11).
+Play Store title: **"Sudofolio: Sudoku Scan & Hints"** (30 characters, the store limit).
+The package stays `com.bay.sudokusolver`. "Sudoku Lens" in `design/` files means Sudofolio.
 
 Android app that reads a sudoku from the camera — newspaper, book or screen — and
 then solves it, hints at it, or checks the user's own progress. The vision pipeline was
@@ -106,7 +110,7 @@ architecture and rules.
   the **docked bottom bar** (v2 option "a"). **Material 3 components restyled to the
   Classical design system**: Cormorant Garamond headings over Lora body, no bold
   (semibold at most), outlined primary buttons (never filled), 4 dp corners, amber as
-  strokes not fills. Theme: `ui/theme/` (`SudokuLensTheme`, `CameraChrome` for the dark
+  strokes not fills. Theme: `ui/theme/` (`SudofolioTheme`, `CameraChrome` for the dark
   chrome over the camera, `SudokuTheme.colors` for non-Material colours).
 - **Answer digits:** one fixed hue in **two fixed steps**: deep on paper with a light
   halo, bright on dark screens with a dark halo. The grid's dark-mode vote (camera
@@ -350,7 +354,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        conflicts, hints used, time (pure Kotlin)
     Orientation.kt     corner order, quarter-turn choice, corner tracking, lock (pure Kotlin)
     ui/theme/          Compose theme: Color, Type (bundled variable fonts), Shape, Outline,
-                       Theme (SudokuLensTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
+                       Theme (SudofolioTheme, CameraChrome, AnswerDigit), Icons (Lucide), ThemePreview
     ui/camera/         live AR screen: GridOverlay (outline per state, answers, viewfinder),
                        ScanChrome (status chip, docked bar, Play/Freeze/Reset/flash), previews
     ui/board/          shared SudokuGrid, flow header, outlined buttons

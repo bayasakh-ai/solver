@@ -75,7 +75,7 @@ private fun OutlineSample(state: GridOutline, label: String) {
 
 @Composable
 fun ThemeSheet(palette: AnswerPalette) {
-    SudokuLensTheme(palette) {
+    SudofolioTheme(palette) {
         val c = SudokuTheme.colors
         Column(
             Modifier.background(MaterialTheme.colorScheme.background).padding(Spacing.gutter),
@@ -120,7 +120,7 @@ fun ThemeSheet(palette: AnswerPalette) {
 
 @Composable
 fun ChromeSheet() {
-    SudokuLensTheme {
+    SudofolioTheme {
         CameraChrome {
             Column(
                 Modifier.fillMaxWidth().background(Chrome.Bar).padding(Spacing.gutter),

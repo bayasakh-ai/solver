@@ -72,7 +72,7 @@ import com.bay.sudokusolver.ui.board.cellLabel
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 
@@ -435,19 +435,19 @@ private fun previewSession(): CheckSession {
 
 @Preview(name = "Check", widthDp = 390, heightDp = 844)
 @Composable
-private fun PCheck() = SudokuLensTheme {
+private fun PCheck() = SudofolioTheme {
     CheckScreen(previewSession(), null, { _, _ -> }, { _, _ -> }, {}, {}, { CheckResult.TooFew })
 }
 
 @Preview(name = "Check · a repeat, a cell marked mine", widthDp = 390, heightDp = 844)
 @Composable
-private fun PCheckRepeat() = SudokuLensTheme {
+private fun PCheckRepeat() = SudofolioTheme {
     CheckScreen(previewSession().edit(0, 5).setMine(80, true).setMine(2, true), null, { _, _ -> }, { _, _ -> }, {}, {},
         { CheckResult.TooFew }, initialSel = 0)
 }
 
 @Preview(name = "Check · fixing a cell", widthDp = 390, heightDp = 844)
 @Composable
-private fun PCheckFix() = SudokuLensTheme {
+private fun PCheckFix() = SudofolioTheme {
     CheckScreen(previewSession(), null, { _, _ -> }, { _, _ -> }, {}, {}, { CheckResult.TooFew }, initialSel = 36)
 }

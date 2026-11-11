@@ -44,7 +44,7 @@ import com.bay.sudokusolver.ui.theme.AnswerDigit
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 
 /* Settings (design v2, "Settings"): answer palette, game board helpers and the debug thumbnail. */
@@ -208,7 +208,7 @@ private fun ToggleRow(title: String, text: String, on: Boolean, onChange: (Boole
 @Preview(name = "Settings", widthDp = 360, heightDp = 1500)
 @Composable
 private fun SettingsPreview() {
-    SudokuLensTheme {
+    SudofolioTheme {
         SettingsScreen(AnswerPalette.INK_BLUE, debug = false, board = BoardSettings(), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
     }
 }
@@ -216,7 +216,7 @@ private fun SettingsPreview() {
 @Preview(name = "Settings · high contrast, debug on", widthDp = 360, heightDp = 780)
 @Composable
 private fun SettingsPreviewHc() {
-    SudokuLensTheme(AnswerPalette.HIGH_CONTRAST) {
+    SudofolioTheme(AnswerPalette.HIGH_CONTRAST) {
         SettingsScreen(AnswerPalette.HIGH_CONTRAST, debug = true, board = BoardSettings(showMistakes = true), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
     }
 }

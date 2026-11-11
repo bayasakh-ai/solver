@@ -84,7 +84,7 @@ private val ChromeColors = darkColorScheme(
 )
 
 @Composable
-fun SudokuLensTheme(
+fun SudofolioTheme(
     palette: AnswerPalette = AnswerPalette.DEFAULT,
     content: @Composable () -> Unit,
 ) {

@@ -14,7 +14,7 @@ import com.bay.sudokusolver.SolveResult
 import com.bay.sudokusolver.FrameResult
 import com.bay.sudokusolver.ScanState
 import com.bay.sudokusolver.Solver
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 
 /*
  * Android Studio previews of the overlay on a fake frame (no camera): one per
@@ -50,7 +50,7 @@ private fun fake(state: ScanState, solved: Boolean, steps: Array<AnswerStep>? = 
 
 @Composable
 private fun Stage(background: Brush, result: FrameResult?) {
-    SudokuLensTheme {
+    SudofolioTheme {
         Box(Modifier.fillMaxSize().background(background)) {
             GridOverlay(result, Modifier.fillMaxSize())
         }
@@ -92,7 +92,7 @@ private val shadow = Brush.horizontalGradient(
 
 @Composable
 private fun FullScreen(background: Brush, result: FrameResult?, frozen: Boolean = false, flash: Boolean? = false) {
-    SudokuLensTheme {
+    SudofolioTheme {
         Box(Modifier.fillMaxSize().background(background)) {
             GridOverlay(result, Modifier.fillMaxSize())
             val content = barContent(result, frozen, error = null, onFreeze = {}, onReset = {}, onCheck = {})

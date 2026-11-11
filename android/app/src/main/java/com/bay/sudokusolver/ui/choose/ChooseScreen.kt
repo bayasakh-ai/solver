@@ -43,7 +43,7 @@ import com.bay.sudokusolver.ui.board.SudokuGrid
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 
 /* Puzzle ready (design/screens/flow/Choose.dc.html): difficulty and three ways to play. */
@@ -156,7 +156,7 @@ private fun Option(icon: ImageVector, title: String, text: String, primary: Bool
 
 @Preview(name = "Choose", widthDp = 390, heightDp = 844)
 @Composable
-private fun PChoose() = SudokuLensTheme {
+private fun PChoose() = SudofolioTheme {
     ChooseScreen(
         Puzzle(Solver.parse("005031040001000008794600000002000003900000005300000800000003517500000600070820900"),
             Solver.parse("685731249231549768794682351462958173918376425357214896829463517543197682176825934")),

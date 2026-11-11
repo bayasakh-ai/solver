@@ -57,7 +57,7 @@ import com.bay.sudokusolver.ui.play.PlayScreen
 import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import org.opencv.android.OpenCVLoader
@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
         if (!hasCameraPermission) requestPermission.launch(Manifest.permission.CAMERA)
 
         setContent {
-            SudokuLensTheme(palette) {
+            SudofolioTheme(palette) {
                 // status bar icons: light over the camera, dark on the Settings page
                 val view = LocalView.current
                 SideEffect {

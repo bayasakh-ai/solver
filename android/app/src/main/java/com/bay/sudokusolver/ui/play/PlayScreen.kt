@@ -84,7 +84,7 @@ import com.bay.sudokusolver.ui.board.cellLabel
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 import kotlinx.coroutines.delay
@@ -670,31 +670,31 @@ private fun designGame(stuck: Boolean = false): GameState {
 
 @Preview(name = "Play", widthDp = 390, heightDp = 844)
 @Composable
-private fun PPlay() = SudokuLensTheme {
+private fun PPlay() = SudofolioTheme {
     PlayScreen(designGame().toggleNote(0, 6).toggleNote(0, 8), PlayMode.HINTS, BoardSettings(showMistakes = true), false, {}, {}, {}, {})
 }
 
 @Preview(name = "Play · hint level 2", widthDp = 390, heightDp = 844)
 @Composable
-private fun PHint2() = SudokuLensTheme {
+private fun PHint2() = SudofolioTheme {
     PlayScreen(designGame().hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 2)
 }
 
 @Preview(name = "Play · advanced fallback", widthDp = 390, heightDp = 844)
 @Composable
-private fun PHintAdvanced() = SudokuLensTheme {
+private fun PHintAdvanced() = SudofolioTheme {
     PlayScreen(designGame(stuck = true).hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 1)
 }
 
 @Preview(name = "Show solution", widthDp = 390, heightDp = 844)
 @Composable
-private fun PSolution() = SudokuLensTheme {
+private fun PSolution() = SudofolioTheme {
     PlayScreen(GameState(previewPuzzle), PlayMode.SOLUTION, BoardSettings(), false, {}, {}, {}, {})
 }
 
 @Preview(name = "Play · solved", widthDp = 390, heightDp = 844)
 @Composable
-private fun PSolved() = SudokuLensTheme {
+private fun PSolved() = SudofolioTheme {
     var g = designGame().hintOpened()
     for (i in 0 until 81) if (!g.isGiven(i)) g = g.reveal(i)
     PlayScreen(g, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {})
@@ -703,7 +703,7 @@ private fun PSolved() = SudokuLensTheme {
 /** Interactive in Android Studio's preview / PreviewActivity: moves are kept. */
 @Preview(name = "Play · interactive", widthDp = 390, heightDp = 844)
 @Composable
-private fun PPlayInteractive() = SudokuLensTheme {
+private fun PPlayInteractive() = SudofolioTheme {
     var g by remember { mutableStateOf(designGame()) }
     PlayScreen(g, PlayMode.HINTS, BoardSettings(showMistakes = true), true, { f -> g = f(g) }, {}, {}, {})
 }

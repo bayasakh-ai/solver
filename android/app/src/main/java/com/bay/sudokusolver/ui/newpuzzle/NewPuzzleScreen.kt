@@ -38,7 +38,7 @@ import com.bay.sudokusolver.ui.board.FlowHeader
 import com.bay.sudokusolver.ui.theme.Classical
 import com.bay.sudokusolver.ui.theme.LucideIcons
 import com.bay.sudokusolver.ui.theme.Ramp
-import com.bay.sudokusolver.ui.theme.SudokuLensTheme
+import com.bay.sudokusolver.ui.theme.SudofolioTheme
 
 /*
  * Play a puzzle: pick a difficulty, get a generated puzzle (Generator.kt) that HintEngine
@@ -130,12 +130,12 @@ private fun Level(d: Difficulty, making: Difficulty?, onPick: (Difficulty) -> Un
 
 @Preview(name = "Play a puzzle", widthDp = 390, heightDp = 844)
 @Composable
-private fun PNewPuzzle() = SudokuLensTheme {
+private fun PNewPuzzle() = SudofolioTheme {
     NewPuzzleScreen(making = null, inProgress = null, onPick = {}, onResume = {}, onBack = {})
 }
 
 @Preview(name = "Play a puzzle · making", widthDp = 390, heightDp = 844)
 @Composable
-private fun PNewPuzzleMaking() = SudokuLensTheme {
+private fun PNewPuzzleMaking() = SudofolioTheme {
     NewPuzzleScreen(making = Difficulty.TRICKY, inProgress = null, onPick = {}, onResume = {}, onBack = {})
 }

@@ -9,7 +9,7 @@ import com.bay.sudokusolver.SignalColors
 
 /*
  * Colours from the "Classical" design system (design/system/styles.css) and the
- * Sudoku Lens screens. Classical is a mono scheme: one amber accent, used as
+ * Sudofolio screens. Classical is a mono scheme: one amber accent, used as
  * strokes, rules and outlines rather than fills.
  */
 
