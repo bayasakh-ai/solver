@@ -207,6 +207,40 @@ def warp(gray, corners, size=WARP_SIZE):
     return cv2.warpPerspective(gray, M, (size, size)), M
 
 
+DESCREEN = None  # e.g. ("blur", 5), ("down", 0.5) or ("gated", 5, 20): see descreen()
+
+
+def cell_texture(warped, margin=5):
+    """Lower quartile of the cells' p2-p98 spread: the background texture of the
+    (mostly empty) cells. Paper ~7-13, moire on a screen photographed at full
+    resolution ~20-50 (measured on photos/ and synth)."""
+    step = warped.shape[0] // 9
+    spreads = []
+    for r in range(9):
+        for c in range(9):
+            cell = warped[r * step + margin:(r + 1) * step - margin, c * step + margin:(c + 1) * step - margin]
+            p2, p98 = np.percentile(cell, [2, 98])
+            spreads.append(p98 - p2)
+    return float(np.percentile(spreads, 25))
+
+
+def descreen(warped, how=None):
+    """Soften screen moire on the flattened grid before anything reads it (dark-mode
+    vote, orientation, cells). binarize() itself stays as in training.
+    ("blur", k): Gaussian k x k. ("down", s): shrink by s (area average), enlarge back.
+    ("gated", k, t): Gaussian k x k only when cell_texture >= t (screen moire)."""
+    how = DESCREEN if how is None else how
+    if not how:
+        return warped
+    kind, v = how[0], how[1]
+    if kind == "gated":  # blur only grids that look like a screen's moire
+        return cv2.GaussianBlur(warped, (v, v), 0) if cell_texture(warped) >= how[2] else warped
+    if kind == "blur":
+        return cv2.GaussianBlur(warped, (v, v), 0)
+    small = cv2.resize(warped, None, fx=v, fy=v, interpolation=cv2.INTER_AREA)
+    return cv2.resize(small, warped.shape[::-1], interpolation=cv2.INTER_LINEAR)
+
+
 def looks_dark(warped):
     """Dark mode check on the flattened grid: light digits on a dark background?
     Each cell votes on its own: is its ink the dark tail of its pixels (paper) or

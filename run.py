@@ -6,7 +6,7 @@ import sys
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
+from grid import descreen, preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
 from orientation import is_consistent, turn_score, choose_turn, roll_corners
 
@@ -130,6 +130,7 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
+    warped = descreen(warped)
     dark = looks_dark(warped)  # a quarter turn doesn't change the per-cell vote
     if dark:  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped

@@ -373,7 +373,9 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        GameStateTest, GeneratorTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
-  app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
+  app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt),
+                       PipelineTimingTest (phone, measurement only: find/read time at 640x480,
+                       1280x960, find-at-640/read-at-1280; photos pushed with adb, see its doc)
 ```
 
 Package: `com.bay.sudokusolver`. Screen locked to portrait.
@@ -398,7 +400,11 @@ the app between previews; it reuses the running one).
 3. `findGrid`: largest convex 4-point contour (border method). If that fails ->
    cell-lattice fallback: square holes of similar size, BFS to assign (col,row),
    homography fit -> rough corners -> `refineEdges` snaps each edge to the strongest
-   line via projection profiles. Corners ordered TL, TR, BR, BL.
+   line via projection profiles. Then (2026-11-11) the convex hull of the biggest
+   contour as 4 rough corners + `refineEdges` (decorated frames: the 247 site's bamboo),
+   then a last-resort border >= 3% of the frame (small grids; their thin cell lines blur
+   away). Grids found by the earlier methods are found the same way. Lowering the 10%
+   border floor or the cell floor instead broke puzzle1. Corners ordered TL, TR, BR, BL.
 4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
 4b. **Orientation** (orientation.py / Orientation.kt): corners are ordered clockwise from
    the one nearest the top-left on screen, which is a quarter turn off past 45 deg. On a
@@ -540,6 +546,31 @@ the printed reading. inspect_photo.py reads both.
   first handwriting (v1.1) test case.
 - Android: 30 fps, ~5 ms grid finding, answers appear in ~1-2 s, self-correction fixes
   misreads live. Tested mostly on a computer screen so far.
+- **Screen session (2026-11-11, `photos/screen_*`, 24 photos of 5 web sudoku sites;
+  plain/angle/glare/small/dark/filled).** Judge with `evaluate.py photos/ --frame 640`
+  (the app's frame size). Baseline 11/24 -> **15/24** after: `solved_extra` (an extra
+  digit equal to the solution counts as solved, listed separately; never in a user
+  cell), last-resort small border, hull fallback. Left: filled 0/5 (user digits on a
+  screen are read as printed: black/bold entries look like print, blue entries are only
+  2/10 removed), small_expert / small_web (3.6% / 2.8% of the frame), angle_247 /
+  glare_247 (an edge snaps onto the bamboo, not the grid line: next, snap to the 9x9
+  lattice). --synth 20 (Mac): 90% over 260 -> 91% over 280 (blur 80 -> 90%, low_res 95 -> 100%,
+  new `moire` condition 85%, 100% with the gated descreen below).
+  - **Small grids at 640x480 can't be read below ~6% of the frame** (synthetic sweep,
+    found/solved of 10: 10% 10/10, 6% 10/9, 4% 6/2, 3% 1/0). 1280x960 reads to 3%
+    (10/10). Hence "Move closer" (`ScanState.MOVE_CLOSER_SHARE` = 0.06): advice, reading
+    carries on. Whether 1280x960 or find-at-640/read-at-1280 fits the 5 ms budget is not
+    measured yet (PipelineTimingTest, phone disconnected).
+  - **Moire at full resolution breaks the dark-mode vote**: empty screen cells get
+    enough contrast to vote at random (screen_web 36/34, sudokucom 30/46 the wrong way).
+    At 640 the frame's area downscale averages it out (dark votes <= 7 on every screen
+    photo). Any higher analysis resolution needs a descreen step: `grid.descreen`
+    ("gated", 5, 20) = Gaussian 5x5 on the warp only when `cell_texture` (lower quartile
+    of cell p2-p98 spread; paper 7-13, moire 20-50) >= 20. Measured: synth moire 85 ->
+    100%, the other 13 conditions identical, full-res screen 12 -> 13/24, 640 unchanged.
+    Blanket blur 3/5 or downscale 0.5 cost shadow/blur images; 0.33 broke everything.
+    **Off by default** (`DESCREEN = None`), not ported: no gain at 640; port it with a
+    higher-resolution mode. No moire training augmentation needed so far.
 - Next real-world test session: paper, bad light/shadow/glare, steep angles, small
   puzzle in frame, curved book page, pencil marks, dark-mode screens. Record how each
   fails ("no grid", "stuck reading", "wrong answer").

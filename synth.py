@@ -16,7 +16,7 @@ from solver import solve
 
 CONDITIONS = ["clean", "tilt", "rotate", "shadow", "glare", "blur",
               "low_res", "jpeg", "dark_mode", "touching_lines", "pen_marks", "pencil",
-              "rotate_steep"]  # appended last: earlier conditions keep the same images per seed
+              "rotate_steep", "moire"]  # appended last: earlier conditions keep the same images per seed
 USER_INK = ("pen_marks", "pencil")  # colour conditions: a started puzzle
 
 
@@ -167,6 +167,14 @@ def apply_condition(img, cond):
                        (w, h), interpolation=cv2.INTER_LINEAR)
     elif cond == "dark_mode":
         f = 255 - f
+    elif cond == "moire":  # photo of a screen: dimmer, two beating pixel gratings
+        f *= random.uniform(0.55, 0.7)
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        th = random.uniform(0, np.pi)
+        th2 = th + np.pi / 2 + random.uniform(-0.15, 0.15)
+        g = sum(np.sin(2 * np.pi * (xx * np.cos(t) + yy * np.sin(t)) / random.uniform(3.0, 7.0))
+                for t in (th, th2)) / 2  # -1..1, low-frequency bands where they beat
+        f *= 1 - random.uniform(0.12, 0.2) * (1 + g)
     f = np.clip(f + np.random.normal(0, 4, f.shape), 0, 255).astype(np.uint8)
     if cond == "jpeg":
         q = random.randint(8, 20)
