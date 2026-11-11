@@ -58,11 +58,13 @@ object GridDetector {
 
     // ---------- finding the grid ----------
 
-    /** Fast border method first, then the cell-lattice fallback with edge snapping, then a
-     *  smaller border as a last resort (a small grid: its thin cell lines blur away). */
+    /** Fast border method first, then the cell-lattice fallback with edge snapping, then the
+     *  hull of a decorated border with edge snapping, then a smaller border as a last
+     *  resort (a small grid: its thin cell lines blur away). Same order as grid.find_grid. */
     fun findGrid(th: Mat, minAreaRatio: Double = MIN_GRID_AREA): Array<Point>? {
         findByBorder(th, minAreaRatio)?.let { return it }
         findByCells(th)?.let { return refineEdges(th, orderCorners(it)) }
+        findByHull(th, minAreaRatio)?.let { return refineEdges(th, it) }
         return if (SMALL_GRID_AREA < minAreaRatio) findByBorder(th, SMALL_GRID_AREA) else null
     }
 
@@ -83,6 +85,41 @@ object GridDetector {
                 if (pts.size == 4 && Imgproc.isContourConvex(MatOfPoint(*pts))) {
                     return orderCorners(pts)
                 }
+            }
+        } finally {
+            contours.forEach { it.release() }
+        }
+        return null
+    }
+
+    /**
+     * Rough corners for a border that isn't a clean quad (a decorated frame whose ends
+     * overhang the corners, knots along the edges): the convex hull of the biggest
+     * contour, simplified to 4 points; refineEdges snaps the edges. Same as grid._find_by_hull.
+     */
+    private fun findByHull(th: Mat, minAreaRatio: Double): Array<Point>? {
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        Imgproc.findContours(th, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
+        try {
+            val c = contours.maxByOrNull { Imgproc.contourArea(it) } ?: return null
+            if (Imgproc.contourArea(c) < minAreaRatio * th.rows().toDouble() * th.cols()) return null
+            val idx = org.opencv.core.MatOfInt()
+            Imgproc.convexHull(c, idx)
+            val all = c.toArray()
+            val hull = MatOfPoint2f(*idx.toArray().map { all[it] }.toTypedArray())
+            idx.release()
+            try {
+                for (eps in doubleArrayOf(0.02, 0.04, 0.06, 0.08, 0.1)) {
+                    val approx = MatOfPoint2f()
+                    Imgproc.approxPolyDP(hull, approx, eps * Imgproc.arcLength(hull, true), true)
+                    val pts = approx.toArray().also { approx.release() }
+                    if (pts.size == 4) return orderCorners(pts)
+                    if (pts.size < 4) return null
+                }
+            } finally {
+                hull.release()
             }
         } finally {
             contours.forEach { it.release() }

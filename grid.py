@@ -8,6 +8,7 @@ from ink import Piece, USER, cell_unsure, kind, neutral_distance, use_removal
 WARP_SIZE = 450  # 9 * 50 px cells
 DIGIT_SIZE = 28  # classifier input size
 MIN_GRID_AREA = 0.1    # border method: grid outline >= this share of the frame
+HULL_FALLBACK = True  # after the cell method: hull of the biggest contour + edge snapping
 SMALL_GRID_AREA = 0.03  # last resort, after the cell method: a smaller border (small grid, measured: below ~6% of a 640x480 frame digits stop reading)
 MIN_CELL_AREA = 0.0004  # cell method: one cell's hole >= this share of the frame
 
@@ -37,12 +38,17 @@ def order_corners(pts):
 
 def find_grid(th, min_area_ratio=None):
     """Find the puzzle's 4 corners. Tries the fast outer-border method first,
-    then falls back to locating the grid from its cells."""
+    then falls back to locating the grid from its cells, then to the hull of a
+    decorated border, then to a smaller border (small grid)."""
     corners = _find_by_border(th, MIN_GRID_AREA if min_area_ratio is None else min_area_ratio)
     if corners is None:
         rough = _find_by_cells(th)
         if rough is not None:
             corners = _refine_edges(th, order_corners(rough.astype(np.float32)))
+    if corners is None and HULL_FALLBACK:
+        rough = _find_by_hull(th, MIN_GRID_AREA)
+        if rough is not None:
+            corners = _refine_edges(th, rough)
     if corners is None and SMALL_GRID_AREA < MIN_GRID_AREA:
         corners = _find_by_border(th, SMALL_GRID_AREA)
     return corners
@@ -100,6 +106,28 @@ def _find_by_border(th, min_area_ratio):
         approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
         if len(approx) == 4 and cv2.isContourConvex(approx):
             return order_corners(approx.reshape(4, 2).astype(np.float32))
+    return None
+
+
+def _find_by_hull(th, min_area_ratio):
+    """Rough corners for a border that isn't a clean quad (a decorated frame whose
+    ends overhang the corners, knots along the edges): the convex hull of the
+    biggest contour, simplified to 4 points. _refine_edges then snaps each edge to
+    the strongest line near it."""
+    contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    h, w = th.shape
+    c = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(c) < min_area_ratio * h * w:
+        return None
+    hull = cv2.convexHull(c)
+    for eps in (0.02, 0.04, 0.06, 0.08, 0.1):
+        approx = cv2.approxPolyDP(hull, eps * cv2.arcLength(hull, True), True)
+        if len(approx) == 4:
+            return order_corners(approx.reshape(4, 2).astype(np.float32))
+        if len(approx) < 4:
+            return None
     return None
 
 
