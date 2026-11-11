@@ -6,6 +6,11 @@
 Real photos: put e.g. news_shadow_01.jpg next to news_shadow_01.txt, where the
 .txt holds 9 lines like '. . 5 . 3 1 . 4 .' (the format run.py prints).
 Results are grouped by name without the trailing number (news_shadow).
+An optional <name>.user.txt marks handwritten cells ('.' elsewhere).
+solved_extra (real photos): solved, every given read right, and the only differences
+are extra digits that equal the solution in cells empty in BOTH truth files. The
+answers shown are then right, so it counts as solved, but is listed separately. A
+user digit read as printed is never forgiven: the goal is to ignore user ink.
 Failures are saved to eval_failures/ so you can look at them."""
 import argparse
 import glob
@@ -20,9 +25,10 @@ import cv2
 import numpy as np
 
 from run import process, show
+from solver import solve
 from answer_ink import step_for, DEEP, BRIGHT
 
-OUTCOMES = ["solved", "wrong_answer", "unsolvable", "too_few_digits", "no_grid"]
+OUTCOMES = ["solved", "solved_extra", "wrong_answer", "unsolvable", "too_few_digits", "no_grid"]
 
 
 def load_truth(path):
@@ -32,7 +38,7 @@ def load_truth(path):
     return grid
 
 
-def judge(res, truth_puzzle, truth_solution=None):
+def judge(res, truth_puzzle, truth_solution=None, truth_user=None):
     """Classify one result and count cells the model misread (before fixes)."""
     status = res["status"]
     misreads = None
@@ -41,10 +47,30 @@ def judge(res, truth_puzzle, truth_solution=None):
     if status == "solved":
         if truth_solution is None:  # real photo: givens must match, solution then follows
             ok = res["puzzle"] == truth_puzzle
+            if not ok and extras_only(res["puzzle"], truth_puzzle, truth_user):
+                return "solved_extra", misreads
         else:
             ok = res["solution"] == truth_solution
         status = "solved" if ok else "wrong_answer"
     return status, misreads
+
+
+def extras_only(puzzle, truth_puzzle, truth_user=None):
+    """True when puzzle = truth givens + digits that equal the truth's solution, all in
+    cells empty in the printed truth AND in the user truth (user digits read as
+    printed stay a failure)."""
+    sols = solve(truth_puzzle)
+    if len(sols) != 1:
+        return False
+    sol = sols[0]
+    for r in range(9):
+        for c in range(9):
+            got, want = puzzle[r][c], truth_puzzle[r][c]
+            if got == want:
+                continue
+            if want != 0 or got != sol[r][c] or (truth_user and truth_user[r][c]):
+                return False
+    return True
 
 
 def report(results):
@@ -56,7 +82,7 @@ def report(results):
         for status, _, _ in rows:
             counts[status] += 1
         n = len(rows)
-        ok = counts["solved"]
+        ok = counts["solved"] + counts["solved_extra"]
         total_ok += ok; total += n
         fails = ", ".join(f"{counts[o]} {o}" for o in OUTCOMES[1:] if counts[o])
         print(f"{cond:<{width}} {ok / n:>7.0%} {n:>4}   {fails}")
@@ -141,14 +167,16 @@ def run_real(model, folder):
             print(f"  skipping {os.path.basename(path)} (no .txt truth)")
             continue
         truth = load_truth(truth_path)
+        user_path = os.path.splitext(path)[0] + ".user.txt"
+        user = load_truth(user_path) if os.path.exists(user_path) else None
         img = cv2.imread(path)
         res = process(img, model)
-        status, misreads = judge(res, truth)
+        status, misreads = judge(res, truth, truth_user=user)
         name = os.path.splitext(os.path.basename(path))[0]
         group = re.sub(r"[_-]?\d+$", "", name) or name
         results[group].append((status, misreads, 0))
         steps[group].append(step_counts(res, truth))
-        if status != "solved":
+        if status not in ("solved", "solved_extra"):
             save_failure(img, name, status, res, truth)
     return results, steps
 
