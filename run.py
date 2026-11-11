@@ -83,19 +83,21 @@ def show(grid):
     return "\n".join(" ".join(str(v or ".") for v in row) for row in grid)
 
 
-def process(img, model):
+def process(img, model, find_scale=1.0):
     """Full pipeline on one BGR image. Returns a dict; 'status' is one of:
     solved, no_grid, too_few_digits, unsolvable.
     Dark mode: the grid is searched in the image, then in its inversion if that
     fails to solve (dark-looking images try the inverted one first). Either way
     looks_dark() on the warped grid makes the cells dark-on-light before reading.
     The Android app does the same per frame, one grid search per frame
-    (GridPolarity in Polarity.kt)."""
+    (GridPolarity in Polarity.kt).
+    find_scale < 1: find the grid on a smaller copy (the cheap part the app does every
+    frame), then warp and read digits from the full-size image (measurement option)."""
     inverted = 255 - img
     attempts = [img, inverted] if np.median(img) >= 110 else [inverted, img]
     first = None
     for i, attempt in enumerate(attempts):
-        res = _process_once(attempt, model, searched_inverted=attempt is inverted)
+        res = _process_once(attempt, model, searched_inverted=attempt is inverted, find_scale=find_scale)
         res["inverted"] = attempt is inverted
         if res["status"] == "solved":
             return res
@@ -116,9 +118,15 @@ def orient(warped, model):
     return choose_turn(scores, consistent)
 
 
-def _process_once(img, model, searched_inverted=False):
+def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     gray, th = preprocess(img)
-    corners = find_grid(th)
+    if find_scale < 1:
+        small = cv2.resize(img, None, fx=find_scale, fy=find_scale, interpolation=cv2.INTER_AREA)
+        corners = find_grid(preprocess(small)[1])
+        if corners is not None:
+            corners = (corners / find_scale).astype(np.float32)
+    else:
+        corners = find_grid(th)
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)

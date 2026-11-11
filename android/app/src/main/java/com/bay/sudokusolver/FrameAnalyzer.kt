@@ -216,7 +216,8 @@ class FrameAnalyzer(
                     read(cells)
                     ink = extracted.ink
                 }
-                val state = updateSolution(isSharp)
+                val state = updateSolution(isSharp,
+                    ScanState.gridShare(flatten(pts), gray.cols(), gray.rows()))
 
                 smoothed = smooth(flatten(pts), smoothed, gray.cols())
                 val s = solved
@@ -271,7 +272,7 @@ class FrameAnalyzer(
     }
 
     /** Solve when the vote produces a new stable reading; returns the scan state. */
-    private fun updateSolution(isSharp: Boolean): ScanState {
+    private fun updateSolution(isSharp: Boolean, gridShare: Double): ScanState {
         val consensus = tracker.consensus()
         if (consensus != null && !consensus.first.contentEquals(solvedFrom)) {
             val s = SelfCorrect.solve(consensus.first, consensus.second)
@@ -280,7 +281,7 @@ class FrameAnalyzer(
             capture = Capture.from(consensus.first, consensus.second, s,
                 ink?.unsure, ink?.removed?.count { it } ?: 0)
         }
-        return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize)
+        return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize, gridShare)
     }
 
     /** Average with the previous corners when they're close, so the outline doesn't jitter. */

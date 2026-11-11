@@ -7,6 +7,9 @@ from ink import Piece, USER, cell_unsure, kind, neutral_distance, use_removal
 
 WARP_SIZE = 450  # 9 * 50 px cells
 DIGIT_SIZE = 28  # classifier input size
+MIN_GRID_AREA = 0.1    # border method: grid outline >= this share of the frame
+SMALL_GRID_AREA = 0.03  # last resort, after the cell method: a smaller border (small grid, measured: below ~6% of a 640x480 frame digits stop reading)
+MIN_CELL_AREA = 0.0004  # cell method: one cell's hole >= this share of the frame
 
 
 def preprocess(img):
@@ -32,14 +35,16 @@ def order_corners(pts):
     return pts[[order[(start + j) % 4] for j in range(4)]]
 
 
-def find_grid(th, min_area_ratio=0.1):
+def find_grid(th, min_area_ratio=None):
     """Find the puzzle's 4 corners. Tries the fast outer-border method first,
     then falls back to locating the grid from its cells."""
-    corners = _find_by_border(th, min_area_ratio)
+    corners = _find_by_border(th, MIN_GRID_AREA if min_area_ratio is None else min_area_ratio)
     if corners is None:
         rough = _find_by_cells(th)
         if rough is not None:
             corners = _refine_edges(th, order_corners(rough.astype(np.float32)))
+    if corners is None and SMALL_GRID_AREA < MIN_GRID_AREA:
+        corners = _find_by_border(th, SMALL_GRID_AREA)
     return corners
 
 
@@ -109,7 +114,7 @@ def _find_by_cells(th, min_cells=40):
     squares = []
     for c in contours:
         area = cv2.contourArea(c)
-        if area < 0.0004 * h * w or area > 0.05 * h * w:
+        if area < MIN_CELL_AREA * h * w or area > 0.05 * h * w:
             continue
         approx = cv2.approxPolyDP(c, 0.1 * cv2.arcLength(c, True), True)
         x, y, bw, bh = cv2.boundingRect(c)

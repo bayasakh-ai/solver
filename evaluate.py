@@ -155,7 +155,15 @@ def run_synth(model, per_condition, seed):
     return results, steps
 
 
-def run_real(model, folder):
+def fit_frame(img, long_side):
+    """Resize a photo so its long side is long_side px (the app analyses 640x480)."""
+    if not long_side:
+        return img
+    f = long_side / max(img.shape[:2])
+    return cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA if f < 1 else cv2.INTER_LINEAR)
+
+
+def run_real(model, folder, frame=None, find_frame=None):
     results = defaultdict(list)
     steps = defaultdict(list)
     images = sorted(f for ext in ("jpg", "jpeg", "png")
@@ -169,8 +177,9 @@ def run_real(model, folder):
         truth = load_truth(truth_path)
         user_path = os.path.splitext(path)[0] + ".user.txt"
         user = load_truth(user_path) if os.path.exists(user_path) else None
-        img = cv2.imread(path)
-        res = process(img, model)
+        img = fit_frame(cv2.imread(path), frame)
+        find_scale = find_frame / max(img.shape[:2]) if find_frame else 1.0
+        res = process(img, model, find_scale=min(find_scale, 1.0))
         status, misreads = judge(res, truth, truth_user=user)
         name = os.path.splitext(os.path.basename(path))[0]
         group = re.sub(r"[_-]?\d+$", "", name) or name
@@ -186,6 +195,10 @@ def main():
     ap.add_argument("folder", nargs="?", help="folder of real photos with .txt truths")
     ap.add_argument("--synth", type=int, help="synthetic photos per condition")
     ap.add_argument("--seed", type=int, default=0, help="same seed = same test images")
+    ap.add_argument("--frame", type=int, help="real photos: resize so the long side is N px "
+                    "(640 = the app's 640x480 analysis frame)")
+    ap.add_argument("--find-frame", type=int, help="real photos: find the grid on a copy with "
+                    "long side N px, warp and read from the --frame image")
     args = ap.parse_args()
     if not args.folder and not args.synth:
         ap.error("give a folder of photos, or --synth N")
@@ -193,7 +206,7 @@ def main():
     import tensorflow as tf
     model = tf.keras.models.load_model("digits.keras")
     shutil.rmtree("eval_failures", ignore_errors=True)
-    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder)
+    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder, args.frame, args.find_frame)
     if not results:
         print("nothing to evaluate")
         return

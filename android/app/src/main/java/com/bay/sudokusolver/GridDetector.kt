@@ -24,6 +24,11 @@ object GridDetector {
 
     const val WARP_SIZE = 450 // 9 * 50 px cells
     const val DIGIT_SIZE = 28 // model input size
+    const val MIN_GRID_AREA = 0.1 // border method: grid outline >= this share of the frame
+    /** Last resort after the cell method: a smaller border (grid.py SMALL_GRID_AREA).
+     *  Below ~6% of a 640x480 frame digits stop reading: see ScanState's move-closer rule. */
+    const val SMALL_GRID_AREA = 0.03
+    const val MIN_CELL_AREA = 0.0004 // cell method: one cell's hole >= this share of the frame
 
     // ---------- preprocessing ----------
 
@@ -53,11 +58,12 @@ object GridDetector {
 
     // ---------- finding the grid ----------
 
-    /** Fast border method first, then the cell-lattice fallback with edge snapping. */
-    fun findGrid(th: Mat, minAreaRatio: Double = 0.1): Array<Point>? {
+    /** Fast border method first, then the cell-lattice fallback with edge snapping, then a
+     *  smaller border as a last resort (a small grid: its thin cell lines blur away). */
+    fun findGrid(th: Mat, minAreaRatio: Double = MIN_GRID_AREA): Array<Point>? {
         findByBorder(th, minAreaRatio)?.let { return it }
-        val rough = findByCells(th) ?: return null
-        return refineEdges(th, orderCorners(rough))
+        findByCells(th)?.let { return refineEdges(th, orderCorners(it)) }
+        return if (SMALL_GRID_AREA < minAreaRatio) findByBorder(th, SMALL_GRID_AREA) else null
     }
 
     private fun findByBorder(th: Mat, minAreaRatio: Double): Array<Point>? {
@@ -98,7 +104,7 @@ object GridDetector {
         val centers = ArrayList<Point>()
         for (c in contours) {
             val area = Imgproc.contourArea(c)
-            if (area < 0.0004 * imageArea || area > 0.05 * imageArea) continue
+            if (area < MIN_CELL_AREA * imageArea || area > 0.05 * imageArea) continue
             val c2f = MatOfPoint2f(*c.toArray())
             val approx = MatOfPoint2f()
             Imgproc.approxPolyDP(c2f, approx, 0.1 * Imgproc.arcLength(c2f, true), true)
