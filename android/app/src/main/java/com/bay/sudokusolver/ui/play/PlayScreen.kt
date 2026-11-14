@@ -69,6 +69,8 @@ import com.bay.sudokusolver.AnswerStep
 import com.bay.sudokusolver.BoardSettings
 import com.bay.sudokusolver.Cells
 import com.bay.sudokusolver.GameState
+import com.bay.sudokusolver.Generator
+import com.bay.sudokusolver.Difficulty
 import com.bay.sudokusolver.Hint
 import com.bay.sudokusolver.HintResult
 import com.bay.sudokusolver.PlayMode
@@ -88,6 +90,7 @@ import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 /*
  * The digital board (design/screens/flow/Play.dc.html + PlayHint*.dc.html). Game rules
@@ -173,6 +176,15 @@ fun PlayScreen(
                         onKeepPlaying = {
                             o.hint?.let { h -> update { it.reveal(h.target) } }
                             open = null
+                        },
+                        onNextHint = {
+                            // write this hint's digit, then straight on to the next one
+                            val h = o.hint
+                            if (h != null) {
+                                val r = game.reveal(h.target).nextHint()
+                                update { g -> g.reveal(h.target).let { if (r != HintResult.Solved) it.hintOpened() else it } }
+                                open = if (r != HintResult.Solved) OpenHint(r) else null
+                            }
                         },
                     )
                     else -> Keypad(
@@ -520,6 +532,7 @@ private fun HintSheet(
     onReveal: () -> Unit,
     onClose: () -> Unit,
     onKeepPlaying: () -> Unit,
+    onNextHint: () -> Unit,
 ) {
     val hint = open.hint
     val shape = RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp)
@@ -572,11 +585,17 @@ private fun HintSheet(
                     FlowButton("Reveal this cell", onReveal, Modifier.weight(1f), icon = LucideIcons.ArrowRight, iconAfter = true, primary = true)
                 }
                 open.advanced -> FlowButton("Keep playing", onKeepPlaying, Modifier.weight(1f), icon = LucideIcons.ArrowRight, iconAfter = true, primary = true)
-                else -> {
-                    FlowButton("Replay", onReplay, icon = LucideIcons.Reset, enabled = open.level == 3)
-                    if (open.level < 3) FlowButton("Next level", { onLevel(open.level + 1) }, Modifier.weight(1f),
+                open.level < 3 -> {
+                    FlowButton("Replay", onReplay, icon = LucideIcons.Reset, enabled = false)
+                    FlowButton("Next level", { onLevel(open.level + 1) }, Modifier.weight(1f),
                         icon = LucideIcons.ArrowRight, iconAfter = true, primary = true)
-                    else FlowButton("Keep playing", onKeepPlaying, Modifier.weight(1f), icon = LucideIcons.ArrowRight, iconAfter = true, primary = true)
+                }
+                else -> {
+                    // level 3: replay shrinks to its icon to make room for Next hint.
+                    // Both buttons write the digit; Next hint opens the following one.
+                    IconButton(LucideIcons.Reset, "Replay", onReplay)
+                    FlowButton("Next hint", onNextHint, icon = LucideIcons.Lightbulb)
+                    FlowButton("Keep playing", onKeepPlaying, Modifier.weight(1f), primary = true)
                 }
             }
         }
@@ -614,7 +633,7 @@ private fun LevelTabs(level: Int, onLevel: (Int) -> Unit) {
 @Composable
 private fun Steps(hint: Hint, replay: Int) {
     val reduce = rememberReduceMotion()
-    val lit = if (reduce) -1 else key(replay) { HintKeys.step(loopProgress()) }
+    val lit = if (reduce) -1 else key(replay) { HintKeys.step(loopProgress(), hint.technique) }
     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         hint.steps.forEachIndexed { k, s ->
             Text("${k + 1}. $s", style = MaterialTheme.typography.bodySmall, color = Classical.Ink,
@@ -678,6 +697,40 @@ private fun PPlay() = SudofolioTheme {
 @Composable
 private fun PHint2() = SudofolioTheme {
     PlayScreen(designGame().hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 2)
+}
+
+/** A solved board with cells cleared, so the next hint is the technique wanted. */
+private fun gameWithHoles(vararg holes: Int): GameState {
+    var g = GameState(previewPuzzle)
+    for (i in 0 until 81) if (!g.isGiven(i) && i !in holes) g = g.enter(i, previewPuzzle.solution[i])
+    return g.tick(252_000).hintOpened()
+}
+
+@Preview(name = "Play · last empty cell, Show me", widthDp = 390, heightDp = 844)
+@Composable
+private fun PHintLastEmpty() = SudofolioTheme {
+    PlayScreen(gameWithHoles(40), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 3)
+}
+
+/**
+ * A Tricky puzzle played with singles up to its first naked single (a nearly solved
+ * board never has one: every gap there is also a hidden single).
+ */
+private fun nakedSingleGame(): GameState {
+    val puzzle = Generator.generate(Difficulty.TRICKY, Random(7)) ?: return gameWithHoles(40)
+    var g = GameState(puzzle)
+    while (true) {
+        val h = (g.nextHint() as? HintResult.Step)?.hint ?: break
+        if (h.technique == Technique.NAKED_SINGLE || h.technique == Technique.ADVANCED) break
+        g = g.enter(h.target, h.digit)
+    }
+    return g.tick(252_000).hintOpened()
+}
+
+@Preview(name = "Play · naked single, Show me", widthDp = 390, heightDp = 844)
+@Composable
+private fun PHintNaked() = SudofolioTheme {
+    PlayScreen(remember { nakedSingleGame() }, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 3)
 }
 
 @Preview(name = "Play · advanced fallback", widthDp = 390, heightDp = 844)

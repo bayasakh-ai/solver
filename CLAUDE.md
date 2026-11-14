@@ -140,8 +140,9 @@ architecture and rules.
   fixing a cell, Choose, Play board, progressive hints and the advanced-technique
   fallback. In them printed digits are regular sans, the player's digits semibold serif
   (Cormorant in the design; **Lora semibold in the app** since Stage 4, see below).
-  Still to design: Next hint at level 3, naked-single / last-empty-cell examples,
-  finished puzzle and mistakes-count states (built simply for now, see below).
+  Still to design: finished puzzle and mistakes-count states (built simply for now, see
+  below). Next hint at level 3 and the naked-single / last-empty-cell Show me were
+  built without a design (2026-11-14, see "Hints: the three stories" below).
 - **Core flow built (Stage 3, 2026-11-09)**: Check (Reading/Photo, tap-to-fix picker),
   Choose, Play with progressive hints. Decisions taken without a design:
   - **Low-confidence ring: top probability < 0.95** (`CheckSession.LOW_CONFIDENCE`,
@@ -166,8 +167,19 @@ architecture and rules.
     digit clears that note from its peers. Finished = header "Solved", keypad off.
   - Hints use printed + correct entries and never target a filled cell; if only a wrong
     entry blocks them: "A digit you entered doesn't fit" with the count, not the place.
-  - Level 3 -> Keep playing writes the digit. Naked single / last empty cell reuse the
-    hidden-single marks (frame, rings, glow, write). Animations off -> still frame.
+  - Level 3 -> Keep playing writes the digit. Animations off -> still frame.
+  - **Hints: the three stories (2026-11-14, `HintOverlay.kt` / `HintKeys`, JVM-tested
+    in `HintKeysTest`; not seen on the phone yet).** Same marks and colours, one 5 s
+    loop, own timeline each. Hidden single: the design's keyframes, unchanged. Naked
+    single: row, column and box light up, the eight digits the cell sees are ringed
+    **one by one in digit order** (`Hint.eliminators` is in digit order for this
+    technique), glow at 46%, then the digit. Last empty cell: the unit's eight digits
+    are ticked off one by one (a short amber stroke under each), glow at 30%: less to
+    show, so it fills sooner. Level 2 and animations-off show everything at once.
+  - **Next hint at level 3:** Replay shrinks to its icon; *Next hint* writes this
+    hint's digit and opens the following hint (counted as a new hint), *Keep playing*
+    writes it and closes. Three buttons in one row: check the fit on a narrow phone
+    with a large font.
   - Frame analysis pauses while a full-screen page covers the camera; the game clock
     runs only while the app is in front.
 - **Stage 4 (2026-11-09, fixes from the owner's phone test):**
@@ -388,7 +400,7 @@ from print by colour or darkness (see above), so the signal is **shape**.
   count). Either the book is like that or a given was misread in the truth: owner to
   check against the book's answer key. If real, "exactly one solution" rejects genuine
   puzzles and needs a decision.
-- **Built (2026-11-14), Python and Kotlin; not tested on the phone yet.**
+- **Built (2026-11-14), Python and Kotlin. Owner's phone test the same day: works with pencil and pen** (the detailed phone checks and the timing below were not ticked off one by one).
   `hand.py` <-> `Hand.kt` decide, `grid.cell_shape` <-> `Hand.cellShapes` measure (pure
   Kotlin: components, 5x5 chamfer distance, histograms), `run.split_hand` <->
   `FrameAnalyzer.read` apply. Rule and numbers in the `hand.py` docstring: HAND = thin

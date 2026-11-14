@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bay.sudokusolver.Cells
 import com.bay.sudokusolver.Hint
+import com.bay.sudokusolver.SudokuUnit
 import com.bay.sudokusolver.Technique
 import com.bay.sudokusolver.UnitType
 import com.bay.sudokusolver.ui.theme.SudokuColors
@@ -24,6 +25,14 @@ import com.bay.sudokusolver.ui.theme.SudokuColors
  * crosses on ruled-out cells, a glow on the target and the digit writing in. Level 3
  * (Show me) plays them on a 5 s loop with the design's keyframes; [t] is 0..1 in that
  * loop. Everything is drawn from the Hint data; nothing here knows the technique rules.
+ *
+ * Each technique has its own story (CLAUDE.md "Hints"; only the hidden single is in the
+ * design files, the other two reuse its marks and colours):
+ *   hidden single    the digits ring, lines sweep, cells are crossed out, one is left
+ *   naked single     row, column and box light up, the eight digits the cell sees are
+ *                    ringed one by one in digit order, the ninth writes in
+ *   last empty cell  the unit lights up, its eight digits are ticked off one by one,
+ *                    the missing one writes in (sooner: there is less to show)
  */
 
 /** Progress of [t] between [a] and [b], clamped to 0..1. */
@@ -45,11 +54,47 @@ object HintKeys {
     fun sweep(t: Float) = ramp(t, 0.12f, 0.30f)
     fun sweepAlpha(t: Float) = fadeOut(t)
     fun cross(t: Float) = ramp(t, 0.30f, 0.38f) * fadeOut(t)
-    fun glow(t: Float) = ramp(t, 0.40f, 0.50f) * fadeOut(t)
-    fun writeAlpha(t: Float) = ramp(t, 0.50f, 0.62f) * fadeOut(t)
-    fun writeScale(t: Float) = 1.5f - 0.5f * ramp(t, 0.50f, 0.62f)
+
+    /** When the target starts to glow: after the technique's own marks are done. */
+    fun glowAt(tech: Technique) = when (tech) {
+        Technique.LAST_EMPTY_CELL -> 0.30f
+        Technique.NAKED_SINGLE -> 0.46f
+        else -> 0.40f
+    }
+    fun glow(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) =
+        ramp(t, glowAt(tech), glowAt(tech) + 0.10f) * fadeOut(t)
+    fun writeAlpha(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) =
+        ramp(t, glowAt(tech) + 0.10f, glowAt(tech) + 0.22f) * fadeOut(t)
+    fun writeScale(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) =
+        1.5f - 0.5f * ramp(t, glowAt(tech) + 0.10f, glowAt(tech) + 0.22f)
+
     /** Which of the 3 step lines is lit (0-based). */
-    fun step(t: Float) = when { t <= 0.30f -> 0; t <= 0.50f -> 1; else -> 2 }
+    fun step(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) = when {
+        tech == Technique.HIDDEN_SINGLE || tech == Technique.ADVANCED -> when { t <= 0.30f -> 0; t <= 0.50f -> 1; else -> 2 }
+        t <= ONE_BY_ONE_FROM -> 0
+        t <= glowAt(tech) -> 1
+        else -> 2
+    }
+
+    /** Naked single and last empty cell: the marks come one by one from here ... */
+    const val ONE_BY_ONE_FROM = 0.08f
+    /** ... and the last one is done this long before the target glows. */
+    private const val ONE_BY_ONE_REST = 0.02f
+
+    /**
+     * Progress 0..1 of mark [k] of [n] appearing in turn (naked single: the rings; last
+     * empty cell: the ticks). Each takes one slot between [ONE_BY_ONE_FROM] and the glow.
+     */
+    fun oneByOne(t: Float, k: Int, n: Int, tech: Technique): Float {
+        val slot = (glowAt(tech) - ONE_BY_ONE_REST - ONE_BY_ONE_FROM) / n
+        return ramp(t, ONE_BY_ONE_FROM + k * slot, ONE_BY_ONE_FROM + (k + 1) * slot)
+    }
+
+    /** The same pop as the hidden single's rings, over a mark's own progress [p]. */
+    fun pop(p: Float) = if (p < 0.5f) 0.6f + 0.58f * (p / 0.5f) else 1.18f - 0.18f * ((p - 0.5f) / 0.5f)
+
+    /** Row, column and box of a naked single fade in before the counting starts. */
+    fun lightUp(t: Float) = ramp(t, 0f, ONE_BY_ONE_FROM)
 }
 
 fun DrawScope.drawHint(
@@ -98,17 +143,56 @@ fun DrawScope.drawHint(
     }
 
     // unit frame with a light tint (levels 1-3)
-    val frame = hint.unit?.let { u ->
-        when (u.type) {
-            UnitType.BOX -> Rect(Offset(u.index % 3 * 3 * cell, u.index / 3 * 3 * cell), Size(3 * cell, 3 * cell))
-            UnitType.ROW -> Rect(Offset(0f, u.index * cell), Size(9 * cell, cell))
-            UnitType.COLUMN -> Rect(Offset(u.index * cell, 0f), Size(cell, 9 * cell))
+    fun rectOf(u: SudokuUnit) = when (u.type) {
+        UnitType.BOX -> Rect(Offset(u.index % 3 * 3 * cell, u.index / 3 * 3 * cell), Size(3 * cell, 3 * cell))
+        UnitType.ROW -> Rect(Offset(0f, u.index * cell), Size(9 * cell, cell))
+        UnitType.COLUMN -> Rect(Offset(u.index * cell, 0f), Size(cell, 9 * cell))
+    }
+    val tech = hint.technique
+    val frame = hint.unit?.let { rectOf(it) } ?: cellRect(hint.target)
+    // naked single, from level 2: the cell's row, column and box light up behind it
+    if (tech == Technique.NAKED_SINGLE && level >= 2) {
+        val a = HintKeys.lightUp(t) * fadeOut(t)
+        for (u in listOf(Cells.rowOf(hint.target), Cells.colOf(hint.target), Cells.boxOf(hint.target))) {
+            val r = rectOf(u)
+            drawRect(colors.hintTintPaper.copy(alpha = colors.hintTintPaper.alpha * a), r.topLeft, r.size)
         }
-    } ?: cellRect(hint.target)
+    }
     drawRect(colors.hintTintPaper, frame.topLeft, frame.size)
     drawRect(halo, frame.topLeft, frame.size, style = Stroke(haloW))
     drawRect(stroke, frame.topLeft, frame.size, style = Stroke(w))
     if (level < 2) return
+
+    if (tech == Technique.NAKED_SINGLE) {
+        // the eight digits the cell sees, ringed one by one in digit order
+        hint.eliminators.forEachIndexed { k, e ->
+            val p = HintKeys.oneByOne(t, k, hint.eliminators.size, tech)
+            val a = p * fadeOut(t)
+            if (a <= 0f) return@forEachIndexed
+            val r = cell * 0.42f * HintKeys.pop(p)
+            drawCircle(halo.copy(alpha = halo.alpha * a), r, center(e), style = Stroke(haloW))
+            drawCircle(stroke.copy(alpha = a), r, center(e), style = Stroke(w))
+        }
+        glow(hint.target, HintKeys.glow(t, tech))
+        if (level >= 3) write(hint.target, HintKeys.writeAlpha(t, tech), HintKeys.writeScale(t, tech))
+        return
+    }
+    if (tech == Technique.LAST_EMPTY_CELL) {
+        // the unit's eight digits, ticked off one by one: a short stroke under each
+        val filled = hint.unit?.cells.orEmpty().filter { it != hint.target }
+        filled.forEachIndexed { k, i ->
+            val p = HintKeys.oneByOne(t, k, filled.size, tech)
+            val a = p * fadeOut(t)
+            if (a <= 0f) return@forEachIndexed
+            val c = center(i) + Offset(0f, cell * 0.34f)
+            val half = 7.dp.toPx() * p
+            drawLine(halo.copy(alpha = halo.alpha * a), c - Offset(half, 0f), c + Offset(half, 0f), haloW, StrokeCap.Round)
+            drawLine(stroke.copy(alpha = a), c - Offset(half, 0f), c + Offset(half, 0f), w, StrokeCap.Round)
+        }
+        glow(hint.target, HintKeys.glow(t, tech))
+        if (level >= 3) write(hint.target, HintKeys.writeAlpha(t, tech), HintKeys.writeScale(t, tech))
+        return
+    }
 
     // sweeps: from each eliminator along its row or column, past the last crossed cell
     val sweepP = HintKeys.sweep(t); val sweepA = HintKeys.sweepAlpha(t)
