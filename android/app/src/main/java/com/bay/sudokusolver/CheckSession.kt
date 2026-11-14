@@ -8,8 +8,12 @@ package com.bay.sudokusolver
 
 enum class CellMark { NONE, UNSURE, CORRECTED, CHANGED, MINE }
 
-/** Why a cell is unsure: the model wasn't confident, or the ink may be the user's. */
-enum class UnsureReason { LOW_CONFIDENCE, INK }
+/**
+ * Why a cell is unsure: the model wasn't confident, the ink's colour is close to a pen's
+ * (INK), or the digit's shape is close to handwriting (HAND: thin or pale against this
+ * puzzle's print, see Hand.kt).
+ */
+enum class UnsureReason { LOW_CONFIDENCE, INK, HAND }
 
 sealed interface CheckResult {
     /** [start]: the digits marked as the user's (0 elsewhere); the board starts with them. */
@@ -51,6 +55,7 @@ class CheckSession(
     fun unsureReason(i: Int): UnsureReason? = when {
         i in capture.corrected -> null // underlined instead: it already says what changed
         capture.inkUnsure[i] -> UnsureReason.INK
+        capture.handUnsure[i] -> UnsureReason.HAND
         lowConfidence(i) -> UnsureReason.LOW_CONFIDENCE
         else -> null
     }
@@ -100,7 +105,8 @@ class CheckSession(
      * second guess, else the only digit among them (a printed cell is likelier misread
      * than imagined), else nothing: no guessing.
      * Otherwise: the model's second guess when it wasn't confident, Empty when the ink
-     * may be the user's, the original reading when self-correction changed it.
+     * may be the user's by colour, the original reading when self-correction changed it.
+     * Nothing when the shape may be handwriting: the answer there is Mark as mine.
      * Null: nothing to suggest.
      */
     fun suggestion(i: Int): Int? {

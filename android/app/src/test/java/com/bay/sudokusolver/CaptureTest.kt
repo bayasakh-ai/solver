@@ -57,6 +57,45 @@ class CaptureTest {
         assertEquals(1, c.inkUnsure.count { it })
     }
 
+    @Test fun handwrittenDigitsAreCarriedApartFromThePuzzle() {
+        // the frames called r1c1 and r1c2 handwritten (7 and 2); r1c3 is a printed 5 some
+        // frames also called handwritten: the settled printed reading wins there
+        val user = IntArray(81).also { it[0] = 7; it[1] = 2; it[2] = 9 }
+        val maybe = BooleanArray(81).also { it[5] = true; it[0] = true } // r1c6 is a printed 1; r1c1 isn't read
+        val solution = Solver.solve(givens)[0]
+        val c = Capture.from(givens, probs(givens), SolveResult(givens, solution, emptyList()), null, 0, user, maybe)
+        user[0] = 0 // the analyzer reuses its arrays
+        assertEquals(7, c.userEntries[0])
+        assertEquals(2, c.userEntries[1])
+        assertEquals(0, c.userEntries[2])
+        assertEquals(0, c.read[0])            // not part of the puzzle
+        assertTrue(c.handUnsure[5])
+        assertEquals(1, c.handUnsure.count { it }) // only cells that hold a printed reading
+        // Check starts with them marked as the user's, and the board gets them as entries
+        val s = CheckSession(c)
+        assertEquals(setOf(0, 1), s.mine)
+        assertEquals(UnsureReason.HAND, s.unsureReason(5))
+        assertEquals(null, s.suggestion(5))
+        val ready = s.confirm() as CheckResult.Ready
+        assertEquals(7, ready.start[0])
+        assertEquals(2, ready.start[1])
+        assertArrayEquals(givens, ready.puzzle.givens)
+    }
+
+    @Test fun handwrittenDigitsNeedThreeFramesAndTakeTheCommonestReading() {
+        fun frame(vararg cells: Pair<Int, Int>) = IntArray(81).also { f -> cells.forEach { (i, d) -> f[i] = d } }
+        val frames = listOf(frame(0 to 4, 1 to 6), frame(0 to 9, 1 to 6), frame(0 to 4), null, frame(0 to 4, 2 to 3))
+        val user = userEntries(frames, needed = 3)
+        assertEquals(4, user[0])   // handwritten in 4 frames, read 4 in three of them
+        assertEquals(0, user[1])   // only 2 frames: not settled, stays out
+        assertEquals(0, user[2])
+        // and through the tracker, next to the printed vote
+        val tracker = PuzzleTracker()
+        repeat(5) { tracker.add(givens, probs(givens), frame(0 to 4)) }
+        assertEquals(4, tracker.userEntries()[0])
+        assertArrayEquals(givens, tracker.consensus()!!.first)
+    }
+
     @Test fun noInkVerdictMeansNothingUnsure() {
         val c = Capture.from(givens, probs(givens), SolveResult(givens, null, emptyList()), null, 0)
         assertEquals(0, c.inkUnsure.count { it })

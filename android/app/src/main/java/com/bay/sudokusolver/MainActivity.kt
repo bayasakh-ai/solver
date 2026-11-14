@@ -1,9 +1,12 @@
 package com.bay.sudokusolver
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -19,12 +22,8 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -37,12 +36,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
-import com.bay.sudokusolver.ui.board.FlowButton
 import com.bay.sudokusolver.ui.newpuzzle.NewPuzzleScreen
-import com.bay.sudokusolver.ui.theme.LucideIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,6 +54,8 @@ import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
 import com.bay.sudokusolver.ui.theme.SudofolioTheme
+import com.bay.sudokusolver.ui.welcome.NoCameraScreen
+import com.bay.sudokusolver.ui.welcome.WelcomeScreen
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import org.opencv.android.OpenCVLoader
@@ -73,6 +71,8 @@ class MainActivity : ComponentActivity() {
     private var hasFlash by mutableStateOf(false)
     private lateinit var analysisExecutor: ExecutorService
     private lateinit var classifier: DigitClassifier
+    private lateinit var handClassifier: DigitClassifier // printed or handwritten? (Hand.kt)
+    private lateinit var handReader: DigitClassifier     // which digit the user wrote
     private var analyzer: FrameAnalyzer? = null
     private lateinit var settings: SettingsStore
     private var palette by mutableStateOf(AnswerPalette.DEFAULT)
@@ -110,9 +110,23 @@ class MainActivity : ComponentActivity() {
     private var camera: Camera? = null
     private var previewView: PreviewView? = null
 
+    /** The welcome pages while [Route.Welcome] is open (first run, or again from Settings). */
+    private var welcome by mutableStateOf<Welcome?>(null)
+    // what could be seen around the last camera request (CameraAsk works out the rest)
+    private var askedAt = 0L
+    private var rationaleBefore = false
+
     private val requestPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             hasCameraPermission = granted
+            // refused twice before: Android answered without showing its dialog, so the
+            // tap did nothing the user could see. Only the system settings can allow it now.
+            val shown = CameraAsk.dialogWasShown(rationaleBefore,
+                shouldShowRequestPermissionRationale(Manifest.permission.CAMERA),
+                SystemClock.elapsedRealtime() - askedAt)
+            if (!granted && !shown) openAppSettings()
+            // asked from the welcome: either answer ends it (scanner, or the no-camera screen)
+            if (welcome != null) closeWelcome()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,6 +138,8 @@ class MainActivity : ComponentActivity() {
         debug = settings.debug
         board = settings.board
         classifier = DigitClassifier(this)
+        handClassifier = DigitClassifier(this, "hand.tflite", outputs = 1)
+        handReader = DigitClassifier(this, "hand_digits.tflite")
         // a game kept from before (swiped away, phone restarted, process killed): the
         // camera bar offers Continue. If Android killed the process with the board open,
         // reopen the board itself.
@@ -137,14 +153,22 @@ class MainActivity : ComponentActivity() {
         hasCameraPermission = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
-        if (!hasCameraPermission) requestPermission.launch(Manifest.permission.CAMERA)
+        // First run: the welcome pages open over everything and ask for the camera on
+        // their last page, after saying why. Nothing asks on its own at start any more;
+        // without the permission the no-camera screen has an Allow camera button.
+        if (!settings.welcomeSeen) {
+            welcome = Welcome(cameraAllowed = hasCameraPermission)
+            nav = nav.open(Route.Welcome)
+        }
 
         setContent {
             SudofolioTheme(palette) {
                 // status bar icons: light over the camera, dark on the Settings page
                 val view = LocalView.current
                 SideEffect {
-                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !nav.onCamera
+                    // (and on the no-camera screen, which is a light page in the camera's place)
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                        !nav.onCamera || !hasCameraPermission
                 }
                 // the full-screen flow pages cover the camera: stop reading frames under them
                 LaunchedEffect(nav.onCamera) { setAnalyzing(nav.onCamera) }
@@ -172,16 +196,13 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.align(Alignment.BottomCenter))
                         }
                     } else {
-                        // no camera: generated puzzles still work
-                        Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-                            horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Camera permission is needed to scan puzzles.")
-                            continueAction()?.let { FlowButton("Continue", it, icon = LucideIcons.Play, primary = true) }
-                            FlowButton("Play a puzzle", { nav = nav.open(Route.NewPuzzle) }, icon = LucideIcons.Grid,
-                                primary = continueAction() == null)
-                        }
+                        // no camera: a kept game and generated puzzles still work
+                        NoCameraScreen(onAllow = ::askForCamera, onContinue = continueAction(),
+                            onPlayPuzzle = { nav = nav.open(Route.NewPuzzle) })
                     }
-                    if (!nav.onCamera) BackHandler(onBack = ::goBack)
+                    // first run, first welcome page: nothing to go back to, so Back leaves the app
+                    val leaveOnBack = nav.current == Route.Welcome && welcome?.let { it.isFirst && !it.replay } == true
+                    if (!nav.onCamera) BackHandler(enabled = !leaveOnBack, onBack = ::goBack)
                     when (val route = nav.current) {
                         Route.Camera -> Unit
                         Route.NewPuzzle -> NewPuzzleScreen(making,
@@ -190,7 +211,13 @@ class MainActivity : ComponentActivity() {
                             onResume = { game?.let { nav = nav.open(Route.Play(it.puzzle, gameMode)) } },
                             onBack = ::goBack)
                         Route.Settings -> SettingsScreen(palette, debug, board,
-                            onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard, onBack = ::goBack)
+                            onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard,
+                            onWelcome = ::replayWelcome, onBack = ::goBack)
+                        Route.Welcome -> welcome?.let { w ->
+                            WelcomeScreen(w,
+                                onNext = { welcome = w.next() }, onBack = ::goBack, onSkip = { welcome = w.skip() },
+                                onEnd = ::endWelcome, onNotNow = ::closeWelcome)
+                        }
                         is Route.Check -> checkSession?.let { session ->
                             CheckScreen(session, checkPhoto,
                                 onEdit = { i, d -> checkSession = session.edit(i, d) },
@@ -277,7 +304,52 @@ class MainActivity : ComponentActivity() {
         nav = nav.open(Route.Play(puzzle, mode))
     }
 
+    /** Settings -> How scanning works: the welcome pages again, closing back to Settings. */
+    private fun replayWelcome() {
+        welcome = Welcome(cameraAllowed = hasCameraPermission, replay = true)
+        nav = nav.open(Route.Welcome)
+    }
+
+    /** The last welcome page's main button. */
+    private fun endWelcome() {
+        when (welcome?.end) {
+            // the answer comes back in requestPermission, which closes the welcome. Seen is
+            // written now: if the app dies behind Android's dialog, the welcome doesn't start over.
+            WelcomeEnd.ALLOW_CAMERA -> { settings.welcomeSeen = true; askForCamera() }
+            WelcomeEnd.START, WelcomeEnd.DONE -> closeWelcome()
+            null -> Unit
+        }
+    }
+
+    /** Done, Start scanning, Not now, or the camera was answered: don't show it at start again. */
+    private fun closeWelcome() {
+        settings.welcomeSeen = true
+        welcome = null
+        if (nav.current == Route.Welcome) nav = nav.back() ?: nav
+    }
+
+    /** Ask Android for the camera (welcome, no-camera screen). */
+    private fun askForCamera() {
+        rationaleBefore = shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+        askedAt = SystemClock.elapsedRealtime()
+        requestPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    /** The app's page in the system settings, where a twice-refused permission can be allowed. */
+    private fun openAppSettings() {
+        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null)))
+    }
+
     private fun goBack() {
+        if (nav.current == Route.Welcome) {
+            // the page before; from a replay's first page, back to Settings. (A first run's
+            // first page never gets here: its Back is left to Android, see leaveOnBack.)
+            val w = welcome
+            val before = w?.back()
+            if (before != null) welcome = before else if (w == null || w.replay) closeWelcome()
+            return
+        }
         val leaving = nav.current
         nav = nav.back() ?: return
         if (leaving is Route.Check) frozen = frozenBeforeCheck
@@ -342,6 +414,10 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         inFront = true
+        // the camera may have been allowed or taken away in the system settings meanwhile
+        hasCameraPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     override fun onPause() {
@@ -386,7 +462,7 @@ class MainActivity : ComponentActivity() {
                 .setResolutionSelector(analysisSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            val frameAnalyzer = FrameAnalyzer(classifier) { r ->
+            val frameAnalyzer = FrameAnalyzer(classifier, handClassifier, handReader) { r ->
                 runOnUiThread { if (frozen == null) result = r } // frozen: keep the answers as they were
             }
             frameAnalyzer.palette = palette
@@ -409,7 +485,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        analysisExecutor.execute { classifier.close() } // runs after the last frame finishes
+        analysisExecutor.execute { classifier.close(); handClassifier.close(); handReader.close() } // runs after the last frame finishes
         analysisExecutor.shutdown()
     }
 }

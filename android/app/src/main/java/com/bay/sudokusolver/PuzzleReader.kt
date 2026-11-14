@@ -8,7 +8,7 @@ package com.bay.sudokusolver
 /** Keeps the last [window] sharp readings; a cell is trusted when [needed] of them agree. */
 class PuzzleTracker(private val window: Int = 5, private val needed: Int = 3) {
 
-    private class Frame(val grid: IntArray, val probs: Array<FloatArray?>)
+    private class Frame(val grid: IntArray, val probs: Array<FloatArray?>, val user: IntArray?)
 
     private val history = ArrayDeque<Frame>()
 
@@ -17,11 +17,18 @@ class PuzzleTracker(private val window: Int = 5, private val needed: Int = 3) {
 
     fun reset() = history.clear()
 
-    /** grid: 81 digits (0 = empty); probs: the model's 9 probabilities for each read cell. */
-    fun add(grid: IntArray, probs: Array<FloatArray?>) {
-        history.addLast(Frame(grid, probs))
+    /**
+     * grid: 81 printed digits (0 = empty); probs: the model's 9 probabilities for each
+     * read cell. user: the digits this frame called handwritten (Hand.kt), 0 elsewhere:
+     * they are NOT in grid, the puzzle is solved from printed digits only.
+     */
+    fun add(grid: IntArray, probs: Array<FloatArray?>, user: IntArray? = null) {
+        history.addLast(Frame(grid, probs, user))
         if (history.size > window) history.removeFirst()
     }
+
+    /** The user's handwritten digits over the same frames (see [userEntries] below). */
+    fun userEntries(): IntArray = userEntries(history.map { it.user }, needed)
 
     /** Majority reading per cell with averaged probabilities, or null if not yet stable. */
     fun consensus(): Pair<IntArray, Array<FloatArray?>>? {
@@ -48,6 +55,27 @@ class PuzzleTracker(private val window: Int = 5, private val needed: Int = 3) {
         }
         return grid to probs
     }
+}
+
+/**
+ * The user's handwritten digits as the frames agree on them: a cell counts when [needed]
+ * frames called it handwritten, and takes the digit most of those frames read (the
+ * lowest on a tie). Looser than [PuzzleTracker.consensus] on purpose: a handwritten
+ * digit the model reads two ways must not hold up the puzzle, and it is never corrected,
+ * so the user can fix it on Check or on the board.
+ */
+fun userEntries(frames: List<IntArray?>, needed: Int): IntArray {
+    val out = IntArray(81)
+    for (i in 0 until 81) {
+        val counts = IntArray(10)
+        var seen = 0
+        for (f in frames) {
+            val d = f?.get(i) ?: 0
+            if (d != 0) { counts[d]++; seen++ }
+        }
+        if (seen >= needed) out[i] = (1..9).maxBy { counts[it] }
+    }
+    return out
 }
 
 data class Fix(val cell: Int, val from: Int, val fromProb: Float, val to: Int, val toProb: Float)

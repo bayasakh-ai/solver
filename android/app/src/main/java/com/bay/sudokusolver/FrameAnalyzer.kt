@@ -44,6 +44,10 @@ data class FrameResult(
  */
 class FrameAnalyzer(
     private val classifier: DigitClassifier,
+    /** hand.tflite (P(handwritten) per cell), or null: every digit is taken as printed. */
+    private val handClassifier: DigitClassifier? = null,
+    /** hand_digits.tflite: reads the handwritten digits; null: the print model's reading. */
+    private val handReader: DigitClassifier? = null,
     private val onResult: (FrameResult) -> Unit,
 ) : ImageAnalysis.Analyzer {
 
@@ -52,6 +56,8 @@ class FrameAnalyzer(
     private var solved: SolveResult? = null
     private var solvedFrom: IntArray? = null // the consensus reading that was solved
     private var capture: Capture? = null     // hand-off to the Check screen, one per consensus
+    private var capturedUser: IntArray? = null // the handwritten digits that capture carries
+    private var handUnsure: BooleanArray? = null // printed or handwritten? (latest frame read)
 
     private var frames = 0
     private var windowStart = System.nanoTime()
@@ -82,6 +88,7 @@ class FrameAnalyzer(
         solvedFrom = null
         capture = null
         ink = null
+        handUnsure = null
         answerSteps.reset()
         orientationLock.reset()
     }
@@ -145,7 +152,14 @@ class FrameAnalyzer(
             val searchedInverted = polarity.searchInverted
             val source = if (searchedInverted) Mat().also { Core.bitwise_not(gray, it) } else gray
             val th = GridDetector.preprocess(source)
-            val corners = GridDetector.findGrid(th)
+            // a quad counts only if its flattened image shows the box lines (GridCheck):
+            // otherwise book covers, titles and keyboards flash up as grids. Judged once:
+            // the grid already on screen is kept as it is, so a blurred frame doesn't drop it
+            val onScreen = smoothed
+            val corners = GridDetector.findGrid(th) { quad ->
+                (onScreen != null && GridCheck.sameQuad(flatten(quad.toList()), onScreen)) ||
+                    GridDetector.looksLikeGrid(source, quad)
+            }
             th.release()
             if (corners == null) polarity.onMiss()
 
@@ -209,20 +223,23 @@ class FrameAnalyzer(
                 chroma?.let { it.first.release(); it.second.release() }
                 val cells = extracted.cells
                 val digits = cells.count { it != null }
+                // printed or handwritten: only for frames that get read, like the colour
+                val shapes = if (isSharp && handClassifier != null) GridDetector.cellShapes(warped) else null
                 val thumb = toBitmap(warped, 225)
                 warped.release()
 
                 if (isSharp) {
-                    read(cells)
+                    read(cells, shapes)
                     ink = extracted.ink
                 }
-                val state = updateSolution(isSharp)
+                val state = updateSolution(isSharp,
+                    ScanState.gridShare(flatten(pts), gray.cols(), gray.rows()))
 
                 smoothed = smooth(flatten(pts), smoothed, gray.cols())
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, state,
-                    s?.puzzle, s?.solution, ink?.unsure, ink?.removed?.count { it } ?: 0,
+                    s?.puzzle, s?.solution, unsureCells(), ink?.removed?.count { it } ?: 0,
                     steps, stepsMicros, orientMs, capture)
                 lastFound = result
                 lastFoundAt = now
@@ -255,8 +272,21 @@ class FrameAnalyzer(
         return plane(1) to plane(2) // U (Cb), V (Cr)
     }
 
-    /** Classify the filled cells of one sharp frame and add the reading to the vote. */
-    private fun read(cells: List<ByteArray?>) {
+    /** Cells to ask about: ink that may be the user's by colour, or by shape (Hand.kt). */
+    private fun unsureCells(): BooleanArray? {
+        val a = ink?.unsure
+        val b = handUnsure
+        if (a == null || b == null) return a ?: b
+        return BooleanArray(81) { a[it] || b[it] }
+    }
+
+    /**
+     * Classify the filled cells of one sharp frame and add the reading to the vote.
+     * Digits that look handwritten (pencil, ballpoint: Hand.kt) leave the reading: the
+     * puzzle is solved from printed digits only. They are voted on apart, as the user's
+     * entries, read as they are and never corrected.
+     */
+    private fun read(cells: List<ByteArray?>, shapes: Array<CellShape?>?) {
         val filled = cells.indices.filter { cells[it] != null }
         val grid = IntArray(81)
         val probs = arrayOfNulls<FloatArray>(81)
@@ -267,20 +297,48 @@ class FrameAnalyzer(
                 grid[i] = out[k].indices.maxBy { out[k][it] } + 1
             }
         }
-        tracker.add(grid, probs)
+        val user = IntArray(81)
+        val unsure = BooleanArray(81)
+        val shaped = filled.filter { shapes?.get(it) != null }
+        if (handClassifier != null && shapes != null && shaped.isNotEmpty()) {
+            val p = handClassifier.classify(shaped.map { cells[it]!! })
+            val kinds = Hand.classify(shaped.map { shapes[it]!! }, p.map { it[0].toDouble() })
+            shaped.forEachIndexed { k, i ->
+                when (kinds[k]) {
+                    HandKind.HAND -> { user[i] = grid[i]; grid[i] = 0; probs[i] = null }
+                    HandKind.UNSURE -> unsure[i] = true
+                    HandKind.PRINTED -> {}
+                }
+            }
+            // the print model has only seen fonts: handwriting gets its own reader
+            val written = (0 until 81).filter { user[it] != 0 }
+            if (handReader != null && written.isNotEmpty()) {
+                val q = handReader.classify(written.map { cells[it]!! })
+                written.forEachIndexed { k, i -> user[i] = q[k].indices.maxBy { q[k][it] } + 1 }
+            }
+        }
+        handUnsure = unsure
+        tracker.add(grid, probs, user)
     }
 
     /** Solve when the vote produces a new stable reading; returns the scan state. */
-    private fun updateSolution(isSharp: Boolean): ScanState {
+    private fun updateSolution(isSharp: Boolean, gridShare: Double): ScanState {
         val consensus = tracker.consensus()
-        if (consensus != null && !consensus.first.contentEquals(solvedFrom)) {
-            val s = SelfCorrect.solve(consensus.first, consensus.second)
-            solved = s
-            solvedFrom = consensus.first
-            capture = Capture.from(consensus.first, consensus.second, s,
-                ink?.unsure, ink?.removed?.count { it } ?: 0)
+        if (consensus != null) {
+            val user = tracker.userEntries()
+            val newReading = !consensus.first.contentEquals(solvedFrom)
+            if (newReading) {
+                solved = SelfCorrect.solve(consensus.first, consensus.second)
+                solvedFrom = consensus.first
+            }
+            // the user's digits can settle after the printed ones: same solution, new hand-off
+            if (newReading || !user.contentEquals(capturedUser)) {
+                capture = Capture.from(consensus.first, consensus.second, solved!!,
+                    ink?.unsure, ink?.removed?.count { it } ?: 0, user, handUnsure)
+                capturedUser = user
+            }
         }
-        return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize)
+        return ScanState.decide(solved, isSharp, tracker.frames, tracker.windowSize, gridShare)
     }
 
     /** Average with the previous corners when they're close, so the outline doesn't jitter. */

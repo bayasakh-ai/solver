@@ -21,7 +21,11 @@ data class Hint(
     val target: Int,
     /** The unit the hint is about (null for naked singles and the advanced fallback). */
     val unit: SudokuUnit?,
-    /** Placed digits that rule the other cells out (ringed in Show me). */
+    /**
+     * Placed digits that rule the other cells out (ringed in Show me). Hidden single:
+     * in cell order. Naked single: the eight digits the cell sees, in digit order
+     * (1, 2, 3 ...), so Show me can light them up one by one like counting.
+     */
     val eliminators: List<Int> = emptyList(),
     /** Empty cells of [unit] that can't take [digit] (crossed out in Show me). */
     val crossedOut: List<Int> = emptyList(),
@@ -136,7 +140,7 @@ object HintEngine {
                 nudgeTitle = "Look at ${where}", nudgeText = "One cell here is easy to fill.",
                 text = "Only $digit is missing in this ${u.type.word}.",
                 reason = "${where.cap()} has eight digits already. The empty cell takes the ninth.",
-                steps = listOf("The ${u.type.word} lights up.", "Only $digit is missing.", "The $digit goes there."),
+                steps = listOf("The ${u.type.word} lights up.", "Eight digits are there. Only $digit is missing.", "The $digit goes there."),
             )
         }
         return null
@@ -224,12 +228,12 @@ object HintEngine {
         val order = Cells.rowOf(target).cells + Cells.colOf(target).cells + Cells.boxOf(target).cells
         val eliminators = (1..9).filter { it != d }.map { other -> order.first { it != target && board[it] == other } }
         return Hint(
-            Technique.NAKED_SINGLE, d, target, unit = null, eliminators = eliminators.distinct().sorted(),
+            Technique.NAKED_SINGLE, d, target, unit = null, eliminators = eliminators,
             nudgeTitle = "Look at ${Cells.name(target)}",
             nudgeText = "Only one digit fits in this cell.",
             text = "Only $d fits in this cell.",
             reason = "It sees ${and((1..9).filter { it != d }.map(Int::toString))} in its row, column and box.",
-            steps = listOf("Its row, column and box light up.", "Eight digits are already taken.", "Only $d is left."),
+            steps = listOf("Its row, column and box light up.", "Eight digits are already taken, one by one.", "Only $d is left."),
         )
     }
 

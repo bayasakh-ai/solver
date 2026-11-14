@@ -2,7 +2,7 @@ package com.bay.sudokusolver
 
 /**
  * Which screen is showing. The camera is always the root; everything else opens over
- * it, so a solved puzzle is still there on return. The core flow is
+ * it (the first-run welcome too), so a solved puzzle is still there on return. The core flow is
  * Check -> Choose -> Play (design/screens/flow). Pure Kotlin (no Android imports) so it moves to the shared
  * iOS module; MainActivity only renders [NavStack.current].
  */
@@ -12,6 +12,12 @@ sealed interface Route {
 
     /** Answer palette and debug thumbnail. */
     data object Settings : Route
+
+    /**
+     * The welcome pages: over the camera on a first run, over Settings when opened again
+     * from there. Which page shows is a [Welcome] kept beside the stack (Welcome.kt).
+     */
+    data object Welcome : Route
 
     /** Check the reading after a capture: from Play on Solved, or Check the reading on Needs review. */
     data class Check(val capture: Capture) : Route

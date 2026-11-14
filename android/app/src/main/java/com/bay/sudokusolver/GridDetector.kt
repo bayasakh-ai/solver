@@ -24,6 +24,11 @@ object GridDetector {
 
     const val WARP_SIZE = 450 // 9 * 50 px cells
     const val DIGIT_SIZE = 28 // model input size
+    const val MIN_GRID_AREA = 0.1 // border method: grid outline >= this share of the frame
+    /** Last resort after the cell method: a smaller border (grid.py SMALL_GRID_AREA).
+     *  Below ~6% of a 640x480 frame digits stop reading: see ScanState's move-closer rule. */
+    const val SMALL_GRID_AREA = 0.03
+    const val MIN_CELL_AREA = 0.0004 // cell method: one cell's hole >= this share of the frame
 
     // ---------- preprocessing ----------
 
@@ -53,14 +58,48 @@ object GridDetector {
 
     // ---------- finding the grid ----------
 
-    /** Fast border method first, then the cell-lattice fallback with edge snapping. */
-    fun findGrid(th: Mat, minAreaRatio: Double = 0.1): Array<Point>? {
-        findByBorder(th, minAreaRatio)?.let { return it }
-        val rough = findByCells(th) ?: return null
-        return refineEdges(th, orderCorners(rough))
+    /** Fast border method first, then the cell-lattice fallback with edge snapping, then the
+     *  hull of a decorated border with edge snapping, then a smaller border as a last
+     *  resort (a small grid: its thin cell lines blur away). Same order as grid.find_grid.
+     *  [accept] judges every candidate (see [looksLikeGrid]): a rejected one is skipped and
+     *  the search goes on, so a book cover or a keyboard is not a grid and a real grid
+     *  next to one still gets its turn. */
+    fun findGrid(th: Mat, accept: (Array<Point>) -> Boolean = { true }): Array<Point>? {
+        findByBorder(th, MIN_GRID_AREA, accept)?.let { return it }
+        findByCells(th)?.let { rough -> refineEdges(th, orderCorners(rough)).let { if (accept(it)) return it } }
+        findByHull(th, MIN_GRID_AREA)?.let { rough -> refineEdges(th, rough).let { if (accept(it)) return it } }
+        return findByBorder(th, SMALL_GRID_AREA, accept, below = MIN_GRID_AREA)
     }
 
-    private fun findByBorder(th: Mat, minAreaRatio: Double): Array<Point>? {
+    /**
+     * accept() for [findGrid]: flatten the candidate from [gray], make it dark-on-light
+     * like the reader will, and ask GridCheck for the box lines. Same as grid.grid_accept.
+     */
+    fun looksLikeGrid(gray: Mat, corners: Array<Point>): Boolean {
+        val (warped, m) = warp(gray, corners)
+        m.release()
+        val pixels = ByteArray(WARP_SIZE * WARP_SIZE)
+        warped.get(0, 0, pixels)
+        if (Polarity.looksDark(pixels, WARP_SIZE)) Core.bitwise_not(warped, warped)
+        val ink = lineInk(warped)
+        ink.get(0, 0, pixels)
+        warped.release(); ink.release()
+        return GridCheck.looksLikeGrid(pixels, WARP_SIZE)
+    }
+
+    /** Ink for the grid check only: gentler than [binarize] (C=2, not 10), so blurred and
+     *  far-away grid lines still show. Never used for reading digits. Same as grid.line_ink. */
+    fun lineInk(warped: Mat): Mat {
+        val th = Mat()
+        Imgproc.adaptiveThreshold(warped, th, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+            Imgproc.THRESH_BINARY_INV, 21, 2.0)
+        return th
+    }
+
+    /** [below]: skip contours of this share or more (the first pass already judged them). */
+    private fun findByBorder(
+        th: Mat, minAreaRatio: Double, accept: (Array<Point>) -> Boolean, below: Double? = null,
+    ): Array<Point>? {
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
         Imgproc.findContours(th, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
@@ -68,15 +107,53 @@ object GridDetector {
         val imageArea = th.rows().toDouble() * th.cols()
         try {
             for (c in contours.sortedByDescending { Imgproc.contourArea(it) }.take(5)) {
-                if (Imgproc.contourArea(c) < minAreaRatio * imageArea) break
+                val area = Imgproc.contourArea(c)
+                if (area < minAreaRatio * imageArea) break
+                if (below != null && area >= below * imageArea) continue
                 val c2f = MatOfPoint2f(*c.toArray())
                 val approx = MatOfPoint2f()
                 Imgproc.approxPolyDP(c2f, approx, 0.02 * Imgproc.arcLength(c2f, true), true)
                 val pts = approx.toArray()
                 c2f.release(); approx.release()
                 if (pts.size == 4 && Imgproc.isContourConvex(MatOfPoint(*pts))) {
-                    return orderCorners(pts)
+                    val corners = orderCorners(pts)
+                    if (accept(corners)) return corners
                 }
+            }
+        } finally {
+            contours.forEach { it.release() }
+        }
+        return null
+    }
+
+    /**
+     * Rough corners for a border that isn't a clean quad (a decorated frame whose ends
+     * overhang the corners, knots along the edges): the convex hull of the biggest
+     * contour, simplified to 4 points; refineEdges snaps the edges. Same as grid._find_by_hull.
+     */
+    private fun findByHull(th: Mat, minAreaRatio: Double): Array<Point>? {
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        Imgproc.findContours(th, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
+        try {
+            val c = contours.maxByOrNull { Imgproc.contourArea(it) } ?: return null
+            if (Imgproc.contourArea(c) < minAreaRatio * th.rows().toDouble() * th.cols()) return null
+            val idx = org.opencv.core.MatOfInt()
+            Imgproc.convexHull(c, idx)
+            val all = c.toArray()
+            val hull = MatOfPoint2f(*idx.toArray().map { all[it] }.toTypedArray())
+            idx.release()
+            try {
+                for (eps in doubleArrayOf(0.02, 0.04, 0.06, 0.08, 0.1)) {
+                    val approx = MatOfPoint2f()
+                    Imgproc.approxPolyDP(hull, approx, eps * Imgproc.arcLength(hull, true), true)
+                    val pts = approx.toArray().also { approx.release() }
+                    if (pts.size == 4) return orderCorners(pts)
+                    if (pts.size < 4) return null
+                }
+            } finally {
+                hull.release()
             }
         } finally {
             contours.forEach { it.release() }
@@ -98,7 +175,7 @@ object GridDetector {
         val centers = ArrayList<Point>()
         for (c in contours) {
             val area = Imgproc.contourArea(c)
-            if (area < 0.0004 * imageArea || area > 0.05 * imageArea) continue
+            if (area < MIN_CELL_AREA * imageArea || area > 0.05 * imageArea) continue
             val c2f = MatOfPoint2f(*c.toArray())
             val approx = MatOfPoint2f()
             Imgproc.approxPolyDP(c2f, approx, 0.1 * Imgproc.arcLength(c2f, true), true)
@@ -303,6 +380,20 @@ object GridDetector {
         }
         th.release(); original.release()
         return Cells(cells, InkResult(applied, removed, unsure))
+    }
+
+    /**
+     * Stroke, darkness and height of the digit in each of the 81 cells of the flattened,
+     * dark-on-light grid (null = empty), for the printed / handwritten split. Same as
+     * grid.cell_shapes; the measuring itself is pure Kotlin (Hand.cellShapes).
+     */
+    fun cellShapes(warped: Mat): Array<CellShape?> {
+        val th = binarize(warped)
+        val n = WARP_SIZE * WARP_SIZE
+        val bin = ByteArray(n).also { th.get(0, 0, it) }
+        th.release()
+        val gray = ByteArray(n).also { warped.get(0, 0, it) }
+        return Hand.cellShapes(bin, gray, WARP_SIZE)
     }
 
     /**

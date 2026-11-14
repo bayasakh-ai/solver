@@ -70,6 +70,8 @@ class HintEngineTest {
         assertEquals(8, h.eliminators.size)
         assertEquals((1..9).filter { it != 7 }.toSet(), h.eliminators.map { board[it] }.toSet())
         assertTrue(h.eliminators.all { Cells.sees(it, 40) })
+        // in digit order, so Show me rings them one by one like counting: 1, 2, 3 ...
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 8, 9), h.eliminators.map { board[it] })
         assertEquals("It sees 1, 2, 3, 4, 5, 6, 8 and 9 in its row, column and box.", h.reason)
     }
 

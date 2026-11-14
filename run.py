@@ -6,7 +6,8 @@ import sys
 import cv2
 import numpy as np
 
-from grid import preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
+import hand
+from grid import cell_shapes, descreen, preprocess, find_grid, grid_accept, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
 from orientation import is_consistent, turn_score, choose_turn, roll_corners
 
@@ -26,6 +27,63 @@ def read_digits(cells, model):
             grid[r][c] = int(np.argmax(p)) + 1
             probs[(r, c)] = p
     return grid, probs
+
+
+HAND = True        # tell handwritten digits from printed ones (hand.py); False: before/after
+_hand_model = None
+
+
+def hand_model():
+    """The printed-vs-handwritten shape model (train_hand.py), loaded once; None if absent."""
+    global _hand_model
+    if _hand_model is None:
+        import os
+        import tensorflow as tf
+        _hand_model = tf.keras.models.load_model("hand.keras") if os.path.exists("hand.keras") else False
+    return _hand_model or None
+
+
+_hand_reader = None
+
+
+def hand_reader():
+    """The reader for handwritten digits (train_hand_digits.py), loaded once; None if
+    absent: handwritten digits are then read by the print model."""
+    global _hand_reader
+    if _hand_reader is None:
+        import os
+        import tensorflow as tf
+        _hand_reader = (tf.keras.models.load_model("hand_digits.keras")
+                        if os.path.exists("hand_digits.keras") else False)
+    return _hand_reader or None
+
+
+def read_hand(cells, kinds):
+    """{(r, c): digit} for the cells called handwritten, read by the handwriting reader.
+    Empty without the reader."""
+    pos = [p for p, k in kinds.items() if k == hand.HAND]
+    reader = hand_reader()
+    if not pos or reader is None:
+        return {}
+    out = reader(np.array([cells[r][c] for r, c in pos], "float32")[..., None] / 255.0,
+                 training=False).numpy()
+    return {p: int(np.argmax(o)) + 1 for p, o in zip(pos, out)}
+
+
+def split_hand(cells, warped):
+    """({(r, c): hand.PRINTED / HAND / UNSURE}, {(r, c): P(handwritten)}) for the filled
+    cells, or ({}, {}) when switched off or the shape model is missing. Decision rules
+    in hand.py."""
+    model = hand_model() if HAND else None
+    shapes = cell_shapes(warped) if model is not None else None
+    pos = [(r, c) for r in range(9) for c in range(9)
+           if cells[r][c] is not None and shapes is not None and shapes[r][c] is not None]
+    if not pos:
+        return {}, {}
+    probs = model(np.array([cells[r][c] for r, c in pos], "float32")[..., None] / 255.0,
+                  training=False).numpy()[:, 0]
+    kinds = hand.classify([hand.Shape(*shapes[r][c]) for r, c in pos], [float(p) for p in probs])
+    return dict(zip(pos, kinds)), dict(zip(pos, (float(p) for p in probs)))
 
 
 def options_for(p, k=3):
@@ -83,19 +141,21 @@ def show(grid):
     return "\n".join(" ".join(str(v or ".") for v in row) for row in grid)
 
 
-def process(img, model):
+def process(img, model, find_scale=1.0):
     """Full pipeline on one BGR image. Returns a dict; 'status' is one of:
     solved, no_grid, too_few_digits, unsolvable.
     Dark mode: the grid is searched in the image, then in its inversion if that
     fails to solve (dark-looking images try the inverted one first). Either way
     looks_dark() on the warped grid makes the cells dark-on-light before reading.
     The Android app does the same per frame, one grid search per frame
-    (GridPolarity in Polarity.kt)."""
+    (GridPolarity in Polarity.kt).
+    find_scale < 1: find the grid on a smaller copy (the cheap part the app does every
+    frame), then warp and read digits from the full-size image (measurement option)."""
     inverted = 255 - img
     attempts = [img, inverted] if np.median(img) >= 110 else [inverted, img]
     first = None
     for i, attempt in enumerate(attempts):
-        res = _process_once(attempt, model, searched_inverted=attempt is inverted)
+        res = _process_once(attempt, model, searched_inverted=attempt is inverted, find_scale=find_scale)
         res["inverted"] = attempt is inverted
         if res["status"] == "solved":
             return res
@@ -116,12 +176,20 @@ def orient(warped, model):
     return choose_turn(scores, consistent)
 
 
-def _process_once(img, model, searched_inverted=False):
+def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     gray, th = preprocess(img)
-    corners = find_grid(th)
+    if find_scale < 1:
+        small = cv2.resize(img, None, fx=find_scale, fy=find_scale, interpolation=cv2.INTER_AREA)
+        corners = find_grid(preprocess(small)[1],
+                            lambda c: grid_accept(gray)((c / find_scale).astype(np.float32)))
+        if corners is not None:
+            corners = (corners / find_scale).astype(np.float32)
+    else:
+        corners = find_grid(th, grid_accept(gray))
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
+    warped = descreen(warped)
     dark = looks_dark(warped)  # a quarter turn doesn't change the per-cell vote
     if dark:  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
@@ -142,9 +210,21 @@ def _process_once(img, model, searched_inverted=False):
     # user ink (coloured pen) is removed before reading: solve from printed digits only
     cells, ink = extract_cells(warped, chroma_planes(img, corners))
     read, probs = read_digits(cells, model)
+    # handwritten digits (pencil, black pen) leave the puzzle: it is solved from printed
+    # digits only. They are kept as the player's entries ("user"), read by the
+    # handwriting reader as they are and never corrected. Unsure cells stay in the
+    # puzzle; Check asks about them.
+    kinds, hand_probs = split_hand(cells, warped)
+    written = read_hand(cells, kinds)
+    user = [[0] * 9 for _ in range(9)]
+    for (r, c), k in kinds.items():
+        if k == hand.HAND:
+            user[r][c], read[r][c] = written.get((r, c), read[r][c]), 0
+            del probs[(r, c)]
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
-              "ink": ink, "backgrounds": backgrounds, "screen": screen}
+              "ink": ink, "backgrounds": backgrounds, "screen": screen, "user": user, "kinds": kinds,
+              "hand_probs": hand_probs}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

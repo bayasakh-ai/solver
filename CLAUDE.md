@@ -140,8 +140,9 @@ architecture and rules.
   fixing a cell, Choose, Play board, progressive hints and the advanced-technique
   fallback. In them printed digits are regular sans, the player's digits semibold serif
   (Cormorant in the design; **Lora semibold in the app** since Stage 4, see below).
-  Still to design: Next hint at level 3, naked-single / last-empty-cell examples,
-  finished puzzle and mistakes-count states (built simply for now, see below).
+  Still to design: finished puzzle and mistakes-count states (built simply for now, see
+  below). Next hint at level 3 and the naked-single / last-empty-cell Show me were
+  built without a design (2026-11-14, see "Hints: the three stories" below).
 - **Core flow built (Stage 3, 2026-11-09)**: Check (Reading/Photo, tap-to-fix picker),
   Choose, Play with progressive hints. Decisions taken without a design:
   - **Low-confidence ring: top probability < 0.95** (`CheckSession.LOW_CONFIDENCE`,
@@ -166,8 +167,19 @@ architecture and rules.
     digit clears that note from its peers. Finished = header "Solved", keypad off.
   - Hints use printed + correct entries and never target a filled cell; if only a wrong
     entry blocks them: "A digit you entered doesn't fit" with the count, not the place.
-  - Level 3 -> Keep playing writes the digit. Naked single / last empty cell reuse the
-    hidden-single marks (frame, rings, glow, write). Animations off -> still frame.
+  - Level 3 -> Keep playing writes the digit. Animations off -> still frame.
+  - **Hints: the three stories (2026-11-14, `HintOverlay.kt` / `HintKeys`, JVM-tested
+    in `HintKeysTest`; not seen on the phone yet).** Same marks and colours, one 5 s
+    loop, own timeline each. Hidden single: the design's keyframes, unchanged. Naked
+    single: row, column and box light up, the eight digits the cell sees are ringed
+    **one by one in digit order** (`Hint.eliminators` is in digit order for this
+    technique), glow at 46%, then the digit. Last empty cell: the unit's eight digits
+    are ticked off one by one (a short amber stroke under each), glow at 30%: less to
+    show, so it fills sooner. Level 2 and animations-off show everything at once.
+  - **Next hint at level 3:** Replay shrinks to its icon; *Next hint* writes this
+    hint's digit and opens the following hint (counted as a new hint), *Keep playing*
+    writes it and closes. Three buttons in one row: check the fit on a narrow phone
+    with a large font.
   - Frame analysis pauses while a full-screen page covers the camera; the game clock
     runs only while the app is in front.
 - **Stage 4 (2026-11-09, fixes from the owner's phone test):**
@@ -216,6 +228,39 @@ architecture and rules.
     back. Found on the way: this Samsung's SharedPreferences returns the string with
     trailing spaces, so `decode` trims lines.
 
+- **Welcome + launcher icon (2026-11-13). Not in the design files.** Built and JVM-tested
+  2026-11-14 (122 tests); the owner's phone test the same day: welcome, camera permission
+  and icon good. The detailed phone list below was not ticked off item by item.
+  - **Welcome** (`Welcome.kt` decides, `ui/welcome/WelcomeScreen.kt` draws,
+    `Route.Welcome`): Hello -> How it works (Scan, Check, Play) -> Allow the camera.
+    Shown once (`SettingsStore.welcomeSeen`), again from Settings -> About -> How
+    scanning works (replay: closes back to Settings, ends on Done).
+  - **The app no longer asks for the camera at start.** The last welcome page says why,
+    then *Allow camera* opens Android's dialog; *Not now* goes on without it. Camera
+    already allowed (an update from a build without a welcome): that page is left out and
+    the flow ends on *Start scanning*. *Skip* (first page only) stops on the camera page,
+    never past it. Back on the first page of a first run leaves the app.
+  - **No-camera screen** (`NoCameraScreen`, replaces the bare text): Continue (a kept
+    game), **Allow camera**, Play a puzzle. Android shows its dialog only twice; after
+    that a request is refused silently, so `CameraAsk.dialogWasShown` (rationale flag
+    before/after + time to answer) decides whether to open the app's page in the system
+    settings instead. Its 450 ms limit is a guess. The permission is re-read in onResume.
+  - **The camera page promises "no picture is saved, the app has no internet access".**
+    True while the manifest asks for CAMERA only and Check's photo stays in memory.
+    **Rewrite it before adding INTERNET** (ads, opt-in upload of corrections, v1.2).
+  - **Phone checks:** fresh install (three pages, Allow -> scanner); Not now -> no-camera
+    screen -> Allow camera; refuse twice, then Allow camera opens system settings, and
+    allowing there shows the scanner on return; dismiss the dialog without choosing
+    (must NOT open settings); large font size on a small screen (pages scroll, buttons
+    stay put); TalkBack reads "1 of 3" and skips the picture.
+  - **Launcher icon: direction "scan" on the dark chrome** (`scan_dark`; owner
+    confirmed on the phone, 2026-11-14). Amber viewfinder corners, the stubs of a 3x3 box, a Lora
+    semibold 9 in the bright answer blue. Generated by `design/icon/make_icon.py`
+    (glyph outline from the bundled font; adaptive + themed layers, API 24-25 bitmaps,
+    `design/icon/play_store_512.png`). Other directions drawn there: `scan` (same mark
+    on paper; it fades on the Play Store's white page), `folio` (digit too small at
+    48 dp), `monogram` (says nothing about scanning). Switch: `--apply <name>`.
+
 ---
 
 ## Roadmap
@@ -226,6 +271,11 @@ architecture and rules.
    someone has started still scans (see "Ignore user ink" below).
 3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
    puzzle library, daily puzzle, difficulty rating.
+   **Pulled into v1 (owner, 2026-11-14): tell printed from handwritten** (pencil, black
+   pen) so a started book puzzle scans; see "Printed vs handwritten" below. *Reading*
+   the handwritten digits (check progress, hints from where I am) stays v1.1.
+   **Postponed to v2 (owner, 2026-11-14):** the 247 site's bamboo frame
+   (screen_angle_247 / screen_glare_247, snap to the 9x9 lattice).
 4. **v1.2:** monetization; continuous learning for the digit model (see below, not now).
 5. **Later:** iOS (see iOS plan).
 
@@ -303,6 +353,124 @@ Tests (status):
    black pen (expected to fail), warm indoor light, a magazine with coloured digits
    (safety net). Also time `warpChroma` + piece stats on sharp frames.
 
+### Printed vs handwritten (v1, started 2026-11-14; Python only so far)
+
+Why now: the owner's phone test on a sudoku book. Pencil and black pen can't be told
+from print by colour or darkness (see above), so the signal is **shape**.
+
+- **Owner's decision (2026-11-14): don't ignore handwriting, carry it over.** Printed
+  digits = the puzzle (givens, not editable); handwritten digits are read and start the
+  board as the player's entries (editable, right or wrong, never fixed: the Mark as mine
+  rules, `Capture.userEntries`). The puzzle is still solved from printed digits only.
+  Checking progress / hints from where I am on paper stay v1.1.
+- **A separate small model** (`hand.tflite`, same 28x28 cleaned cell as the digit
+  model), so `model.tflite` and its parity tests stay untouched.
+  `make_handwritten.py`: MNIST digits redrawn as cell entries (size, stroke thinned to
+  1.6-4.2 px, slant, offset, grey ink, grid lines, blur, noise) through the same
+  `binarize` + `clean_cell`. `train_hand.py`: printed = digits.npz, handwritten =
+  hand.npz, 27,000 each.
+- **First numbers (2026-11-14, 640 px, gray only, threshold 0.5):** synthetic validation
+  97.9%. Real cells: printed called handwritten 27/725 (3.7%; 14 of them in
+  screen_glare_247, a bad warp that fails anyway; 13/709 = 1.8% without it; book,
+  puzzle1/3/4 0), puzzle1's red-pen digits called handwritten 52/55 (94.5%).
+  Typed entries on screens (screen_filled_*) look printed: 6/61 flagged, as expected.
+- **Geometry alone is not enough** (puzzle1): printed height 25-31 px vs pen 21-38,
+  width 11-22 vs 6-38, stroke 3.8-4.7 vs 2.7-3.8: overlapping. Possible second signal
+  later (printed digits of one puzzle share a size and baseline).
+- **Owner's book photos (2026-11-14): `book_pen_01-02`, `book_pencil_01-04`** (one
+  writer, thin cursive digits; truths drafted by Claude from the photos, the three
+  finished ones confirmed by the solver; owner to confirm). 640 px, gray only:
+  | | printed called hand | hand called hand (CNN >= 0.5) | hand digit read right (print model) |
+  |---|---|---|---|
+  | book pen | 2/58 | 87/104 (84%) | 91/104 (88%) |
+  | book pencil | 0/120 | 83/101 (82%) | 90/101 (89%) |
+  | puzzle1 red pen | 0/25 | 52/55 | 36/55 (65%) |
+  Pencil is not lost by `binarize` (0 handwritten cells missed).
+- **Better signal than the CNN: stroke width and ink darkness relative to the puzzle's
+  own printed digits** (reference = median over cells the CNN is sure are printed,
+  P < 0.1). Stroke = 2 x mean of the top fifth of the distance transform; darkness =
+  (paper - ink p25) / paper. Printed (713 cells, 24 photos): stroke 0.89-1.20,
+  darkness 0.77-1.13 (p1-p99). Handwritten (260): stroke 0.61-0.91, darkness 0.32-0.85.
+  Rule **stroke < 0.92 AND darkness < 0.88**: printed flagged 0/713, handwritten missed
+  2/260 (CNN alone: 8 / 38). Thresholds were picked on these same cells (two writers,
+  one book + one newspaper): not a held-out number. Fails by design when the print is
+  thin and the pen is thick; the CNN is the fallback there (disagreement -> unsure).
+- **Three of the six book puzzles have several solutions** from their printed digits
+  (book_pencil_02: 8, _03: 9, _04: 16; adding the handwritten digits doesn't change the
+  count). Either the book is like that or a given was misread in the truth: owner to
+  check against the book's answer key. If real, "exactly one solution" rejects genuine
+  puzzles and needs a decision.
+- **Built (2026-11-14), Python and Kotlin. Owner's phone test the same day: works with pencil and pen** (the detailed phone checks and the timing below were not ticked off one by one).
+  `hand.py` <-> `Hand.kt` decide, `grid.cell_shape` <-> `Hand.cellShapes` measure (pure
+  Kotlin: components, 5x5 chamfer distance, histograms), `run.split_hand` <->
+  `FrameAnalyzer.read` apply. Rule and numbers in the `hand.py` docstring: HAND = thin
+  AND pale against the puzzle's own print; a stroke only just thinner (>= 0.85) needs
+  the shape model's P >= 0.9; other mixed signs -> UNSURE (stays in the puzzle, Check
+  asks); < 5 sure-printed cells or < 17 printed left -> no split. The first version
+  (two of three signs, height as a vote) moved 7 synthetic printed digits out (glare
+  100 -> 85%, tilt 95 -> 90%, moire 90 -> 85%) and lost screen_glare_sudokucom.
+  Split on vs off (`evaluate.py --no-hand`):
+  - photos at 640: 63% -> **71%** of 41, no photo lost (book_pen 0/2 -> 2/2,
+    book_pencil 0/4 -> 1/4: the other three are the several-solutions puzzles above).
+    Printed called handwritten 0/329, handwritten found 201/205 on paper (4 unsure).
+  - `--synth 20` (Windows): the 13 other conditions identical, 90% over 280.
+  - **Synthetic `pencil` stays 0% and is not a test of this**: its user digits are
+    Hershey-font digits as thick as the print (stroke median 0.96 of the print, shape
+    model P median 0.01), so the split calls them printed 221 / unsure 182 / hand 67.
+- **Reader for handwritten digits: `hand_digits.tflite`** (`train_hand_digits.py`:
+  hand.npz + digits.npz, same CNN). Only cells called HAND are read with it. On 260
+  real handwritten digits (book 205 + puzzle1's red pen 55): print model 217 (83%),
+  the reader 237-246 over three seeds (91-95%), the shipped one 242. In the pipeline
+  the book's found handwriting is read right 193/201. Commonest miss: a 1 with a flag
+  read as 7. More synthetic data (9,000 per digit) or averaging with the print model
+  did not help. The quantized tflite files agree with Keras (hand.tflite: 0 of 1,209
+  verdicts differ, max |dP| 0.022; hand_digits.tflite: 0 of 260 readings differ).
+- **In the app:** each sharp frame measures shapes, runs hand.tflite, and moves HAND
+  cells out of the reading into a separate vote (`PuzzleTracker.userEntries`: a cell
+  counts when 3 of 5 frames call it handwritten, digit = the commonest reading; looser
+  than the printed consensus so a wobbly handwritten digit can't hold up the puzzle).
+  `Capture.userEntries` carries them: Check shows them as yours (Mark as mine rules:
+  the board starts with them as the player's entries, never fixed), the puzzle is
+  solved from printed digits only. UNSURE -> `Capture.handUnsure` -> coral ring,
+  `UnsureReason.HAND`: "it looks a little like handwriting ... Mark as mine". Live AR
+  draws answers over handwritten cells too (as it already did over ignored pen).
+  - **Not measured: time on the phone.** Desktop JVM: `Hand.cellShapes` 2.3 ms per
+    frame (14 ms before histograms replaced sorting), plus two more model runs of 81,
+    on sharp frames only. `PipelineTimingTest` now logs it ("printed/handwritten ...
+    ms"); push the book photos too.
+  - **Size sweep (14 photos at 640, grid at 100 / 75 / 55% of that, sharp frames only,
+    Python):** printed called handwritten 0/386, 0/257, 0/91. Handwriting found
+    199/205, 181/205, 71/89 (the rest unsure: ringed, kept in the puzzle) and read
+    right 192, 169, 51. So a small grid loses handwriting to "unsure" and misreads
+    more of it, but never moves print out. Gaussian blur sigma >= 1 made every frame
+    fail the sharpness gate, so blurred frames are not read at all.
+  - **Phone checks:** the book in pencil and in ballpoint (entries arrive on Check as
+    yours, printed digits stay, puzzle solves); a blank puzzle (nothing marked as
+    yours, no extra coral rings); glare on print (rings at most, never "yours"); thick
+    black pen (expected: stays printed or ringed); does the vote settle as fast as
+    before.
+- **The three several-solutions truths were re-checked against the flattened photos
+  (2026-11-14):** this book prints its givens on grey cells, so print and handwriting
+  can't be confused in the truth, and every given matches. The printed digits really
+  leave 8 / 9 / 16 solutions that differ in 15-22 cells, and the user's entries fit
+  all of them. So the book's puzzles are not all proper, or need a rule we don't know
+  (not diagonals: book_pencil_02 has two 4s on the main diagonal). **Owner's decision
+  still needed:** today such a scan ends on Check with "more than one solution".
+- **Still to do:** phone test (above); corner notes, crossed-out digits (book_pen_02
+  r4c1); low-confidence handwritten readings ("Is this a 4 or a 9?" before judging,
+  v1.1); typed entries on screens (screen_filled_*: look printed, 0/61 found); a
+  thick handwriting next to thin print (see `handwritten` below).
+- **Synthetic `handwritten` condition** (`synth.py`, appended last; MNIST digits redrawn
+  thin in pencil grey / ballpoint dark via `make_handwritten.glyph`, a third of them
+  wrong): 0% without the split, **35%** with it (Windows, --synth 20; the 14 earlier
+  conditions identical, 86% over 300). Over 30 more images: printed kept 833/839
+  (6 unsure, 0 moved), written digits 404 moved / 372 unsure / 7 printed. The unsure
+  ones are pale with a sure shape model but as thick as a thin printed FONT (307);
+  one wrong digit left in the puzzle makes it unsolvable, hence 35%. Accepting
+  "pale + sure model" as handwriting moved glare-damaged print out (numbers in the
+  `hand.py` docstring), so it is not done. The shape model was trained on the same
+  generator: this condition checks the pipeline around it, not the model.
+
 ---
 
 ## Repo layout
@@ -315,12 +483,18 @@ Tests (status):
   make_digits.py       synthetic printed-digit dataset (system fonts)
   font_check.py        filters fonts -> good_fonts.txt (machine-specific, gitignored)
   train_digits.py      small CNN -> digits.keras + model.tflite
+  make_handwritten.py  synthetic handwritten cells from MNIST -> hand.npz
+  train_hand.py        printed-vs-handwritten CNN -> hand.keras + hand.tflite
+  train_hand_digits.py reader for handwritten digits -> hand_digits.keras + hand_digits.tflite
   diagnose.py          confusion matrix, worst fonts, mistakes.png, --prune
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
-  synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
+  synth.py             synthetic puzzle photos under 15 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
+  export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
+  hand.py              printed vs handwritten decision rules    <-> Hand.kt
+  export_hand_cases.py flattened grids + cell shapes + verdicts for HandParityTest
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
   orientation.py       which way is up: turn chosen by the reading  <-> Orientation.kt
@@ -333,17 +507,21 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     MainActivity.kt    camera setup, permission, freeze/torch/reset, hosts the ui/camera screen
     FrameAnalyzer.kt   per-frame pipeline on the analysis thread, emits FrameResult
     GridDetector.kt    Kotlin port of grid.py
-    DigitClassifier.kt TFLite wrapper, FIXED batch of 81
-    PuzzleReader.kt    PuzzleTracker (frame voting) + SelfCorrect
+    DigitClassifier.kt TFLite wrapper, FIXED batch of 81 (model.tflite, hand.tflite, hand_digits.tflite)
+    PuzzleReader.kt    PuzzleTracker (frame voting, the user's handwritten digits apart) + SelfCorrect
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
+    GridCheck.kt       is a found quad a sudoku? box-line score (pure Kotlin)   <-> grid.box_line_score
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
+    Hand.kt            printed / handwritten / unsure by stroke, darkness, height against the
+                       puzzle's own print; cell shapes (pure Kotlin)   <-> hand.py + grid.cell_shape
     Solver.kt          Kotlin port of solver.py
     AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
                        hysteresis), contrast + colour-vision maths (pure Kotlin)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
     Capture.kt         hand-off from the scan to Check: read vs fixed digits, confidence,
                        second guess, unsure ink, pen count, solution (pure Kotlin)
-    Route.kt           Route (Camera / Settings / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
+    Route.kt           Route (Camera / Settings / Welcome / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
+    Welcome.kt         welcome pages (which exist, what the last button does), CameraAsk (pure Kotlin)
     Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
     GameStore.kt       the kept game in SharedPreferences, written after every change (Android side)
@@ -363,17 +541,22 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ui/newpuzzle/      NewPuzzleScreen (Play a puzzle: pick a difficulty, Carry on)
     ui/play/           PlayScreen (board, keypad, hint sheet, Show solution), HintOverlay (hint marks
                        + Show me keyframes)
-    ui/settings/       SettingsScreen (answer palette, game board, debug thumbnail), SettingsStore
-                       (SharedPreferences; debug off by default)
+    ui/settings/       SettingsScreen (answer palette, game board, debug thumbnail, welcome again),
+                       SettingsStore (SharedPreferences; debug off by default, welcomeSeen)
+    ui/welcome/        WelcomeScreen (Hello, How it works, Allow the camera), NoCameraScreen
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
                        (OFL; Lora reserves its name, so no static cuts). Licences (fonts, Lucide) in assets/licenses/
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
-                       GameStateTest, GeneratorTest
-                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
-                       from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
-  app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt)
+                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest
+                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
+                       resources/hand/ from export_hand_cases.py;
+                       from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /
+                       export_grid_check_cases.py)
+  app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt),
+                       PipelineTimingTest (phone, measurement only: find/read time at 640x480,
+                       1280x960, find-at-640/read-at-1280; photos pushed with adb, see its doc)
 ```
 
 Package: `com.bay.sudokusolver`. Screen locked to portrait.
@@ -398,7 +581,13 @@ the app between previews; it reuses the running one).
 3. `findGrid`: largest convex 4-point contour (border method). If that fails ->
    cell-lattice fallback: square holes of similar size, BFS to assign (col,row),
    homography fit -> rough corners -> `refineEdges` snaps each edge to the strongest
-   line via projection profiles. Corners ordered TL, TR, BR, BL.
+   line via projection profiles. Then (2026-11-11) the convex hull of the biggest
+   contour as 4 rough corners + `refineEdges` (decorated frames: the 247 site's bamboo),
+   then a last-resort border >= 3% of the frame (small grids; their thin cell lines blur
+   away). Grids found by the earlier methods are found the same way. Lowering the 10%
+   border floor or the cell floor instead broke puzzle1. Corners ordered TL, TR, BR, BL.
+   **Every candidate must pass the grid check** (`looks_like_grid` / `GridCheck`, see
+   Hard-won decisions); a rejected one is skipped and the next method gets its turn.
 4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
 4b. **Orientation** (orientation.py / Orientation.kt): corners are ordered clockwise from
    the one nearest the top-left on screen, which is a quarter turn off past 45 deg. On a
@@ -412,6 +601,9 @@ the app between previews; it reuses the running one).
    (colour, sharp frames only; see "Ignore user ink") -> `cleanCell` -> 28x28 centred
    digit or null (empty).
 6. Model -> 9 probabilities per filled cell.
+6b. Printed or handwritten (sharp frames only; see "Printed vs handwritten"): cell
+   shapes + hand.tflite -> handwritten cells leave the reading and are read by
+   hand_digits.tflite as the user's entries; unsure ones stay and are flagged.
 7. Live only: sharp frames only (Laplacian variance of the WARPED grid > SHARP_ENOUGH=100);
    `PuzzleTracker` keeps last 5 readings, a cell is trusted when >= 3 agree.
 8. `SelfCorrect`: if no unique solution, try 2nd-4th model choices or "empty" for the
@@ -445,6 +637,30 @@ the app between previews; it reuses the running one).
   149/150 with margins down to 0.010 (the model is confidently wrong on sideways
   digits), so sudoku consistency confirms it. Live frames track corners instead of
   re-deciding, which keeps the cost to one 4-way reading per grid.
+- **A quad is a grid only if it shows its box lines** (2026-11-14, `grid.box_line_score`
+  <-> `GridCheck.boxLineScore`). The finder returned any four-cornered shape, so the
+  outline flashed onto a book cover, a title block and a keyboard (owner's phone test;
+  `photos/nogrid_*`: the 10% border, the hull fallback and the 3% border all did it).
+  Check, on the flattened dark-on-light quad: `line_ink` (adaptive threshold 21, **C=2**,
+  for this check only), then **3 of the 4 inner box lines** must be ink over >= 0.93 of
+  their length (best column/row within 9 px, ink within 5 px sideways counts).
+  - **Only the box lines**: the thin cell lines of several screen sudokus are too faint
+    (2-6 of 16 inner lines found on solved screen_web / sudokucom photos).
+  - **Not `binarize` (C=10), not all 4 lines.** The first version (C=10, weakest line
+    >= 0.6) separated sharp photos perfectly (270 solved grids >= 0.77, false <= 0.41)
+    but on the phone the grid was found late and only up close: with real grids at
+    30-100% size and blur sigma 0-2 it rejected 147 of 716. Now 23 of 716 (sharp set:
+    0/270, min 0.976); false quads 0/376 (5 no-grid photos jittered, shrunk, blurred:
+    <= 0.77, one mirrored-title artefact at 0.907). Line prominence (line minus
+    background share) was worse: moire raises the background.
+  - **Live: judged once** (`GridCheck.sameQuad`, Kotlin only): a quad whose corners are
+    within 15% of a side of the grid already on screen is kept without the check, so a
+    blurred frame doesn't drop the outline and restart the vote.
+  Result: nogrid 0/5 -> 5/5 rejected, --synth 20 identical (90% over 280, Windows),
+  photos at 640 identical for the 28 with truths, book 2/2; size x blur sweep (11 photos,
+  15 settings): 0 solvable frames lost (first version: 6 of 55). Not measured: curved
+  pages, phone timing (a new grid is warped + voted twice; `PipelineTimingTest` includes
+  the check).
 - **TFLite batch is fixed at 81.** Resizing the input per frame desynced the output
   shape and crashed (`[24, 9]` vs `[23, 9]`). Never call `resizeInput` per frame.
 - **Sharpness is measured inside the warped grid only** — a blank wall scores ~11
@@ -468,8 +684,12 @@ python run.py photo.jpg                   # single photo -> photo_solved.jpg
 python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x_inspect.png
 python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
+python export_grid_check_cases.py         # after changing box_line_score / BOX_LINES
 python export_ink_cases.py                # after changing ink.py / piece stats in grid.py
+python export_hand_cases.py               # after changing hand.py / cell_shape in grid.py
+python make_handwritten.py && python train_hand.py && python train_hand_digits.py   # handwriting models
 python export_background_cases.py         # after changing cell_backgrounds / answer_ink.py
+python design/icon/make_icon.py [--apply scan_dark]   # launcher icon (pip install fonttools cairosvg pillow)
 ```
 
 After retraining, ALWAYS update the app:
@@ -479,8 +699,15 @@ python export_test_cells.py
 cp test_cells.bin test_expected.txt android/app/src/androidTest/assets/
 ```
 
+After retraining a handwriting model: `cp hand.tflite hand_digits.tflite
+android/app/src/main/assets/`, re-run `evaluate.py photos/ --frame 640` (the split table)
+and `export_hand_cases.py`.
+
 Android (from `android/`): `./gradlew testDebugUnitTest` (JVM tests),
 `./gradlew connectedDebugAndroidTest` (phone tests), or run from Android Studio.
+
+`photos/nogrid_*.jpg` (no truth file): scenes without a puzzle; evaluate.py counts a
+reported grid there as `false_grid`. `--no-grid-check` measures without the check.
 
 Truth file format (same as run.py prints): 9 lines like `. . 5 . 3 1 . 4 .`.
 Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.
@@ -540,6 +767,39 @@ the printed reading. inspect_photo.py reads both.
   first handwriting (v1.1) test case.
 - Android: 30 fps, ~5 ms grid finding, answers appear in ~1-2 s, self-correction fixes
   misreads live. Tested mostly on a computer screen so far.
+- **Screen session (2026-11-11, `photos/screen_*`, 24 photos of 5 web sudoku sites;
+  plain/angle/glare/small/dark/filled).** Judge with `evaluate.py photos/ --frame 640`
+  (the app's frame size). Baseline 11/24 -> **15/24** after: `solved_extra` (an extra
+  digit equal to the solution counts as solved, listed separately; never in a user
+  cell), last-resort small border, hull fallback. Left: filled 0/5 (user digits on a
+  screen are read as printed: black/bold entries look like print, blue entries are only
+  2/10 removed), small_expert / small_web (3.6% / 2.8% of the frame), angle_247 /
+  glare_247 (an edge snaps onto the bamboo, not the grid line: next, snap to the 9x9
+  lattice). --synth 20 (Mac): 90% over 260 -> 91% over 280 (blur 80 -> 90%, low_res 95 -> 100%,
+  new `moire` condition 85%, 100% with the gated descreen below).
+  - **Small grids at 640x480 can't be read below ~6% of the frame** (synthetic sweep,
+    found/solved of 10: 10% 10/10, 6% 10/9, 4% 6/2, 3% 1/0). 1280x960 reads to 3%
+    (10/10). Hence "Move closer" (`ScanState.MOVE_CLOSER_SHARE` = 0.06): advice, reading
+    carries on. **Timed on the phone** (PipelineTimingTest, Galaxy A35, 24 screen photos,
+    2026-11-12; median / p90):
+    | mode | grid found | find | warp+cells+model |
+    |---|---|---|---|
+    | 640x480 | 22/24 | 5.2 / 23.2 ms | 21.9 / 23.9 ms |
+    | 1280x960 | 23/24 | 34.1 / 106.2 ms | 29.1 / 31.8 ms |
+    | hybrid (find 640, read 1280) | 22/24 | 5.3 / 18.7 ms | 25.6 / 29.6 ms |
+    Finding at 1280 is ~6.5x over the 5 ms budget; the hybrid keeps finding at 640 cost
+    and adds ~3.7 ms per read (reads run on sharp frames only). The hybrid is the
+    affordable way to read small grids; it needs the descreen step ported first.
+  - **Moire at full resolution breaks the dark-mode vote**: empty screen cells get
+    enough contrast to vote at random (screen_web 36/34, sudokucom 30/46 the wrong way).
+    At 640 the frame's area downscale averages it out (dark votes <= 7 on every screen
+    photo). Any higher analysis resolution needs a descreen step: `grid.descreen`
+    ("gated", 5, 20) = Gaussian 5x5 on the warp only when `cell_texture` (lower quartile
+    of cell p2-p98 spread; paper 7-13, moire 20-50) >= 20. Measured: synth moire 85 ->
+    100%, the other 13 conditions identical, full-res screen 12 -> 13/24, 640 unchanged.
+    Blanket blur 3/5 or downscale 0.5 cost shadow/blur images; 0.33 broke everything.
+    **Off by default** (`DESCREEN = None`), not ported: no gain at 640; port it with a
+    higher-resolution mode. No moire training augmentation needed so far.
 - Next real-world test session: paper, bad light/shadow/glare, steep angles, small
   puzzle in frame, curved book page, pencil marks, dark-mode screens. Record how each
   fails ("no grid", "stuck reading", "wrong answer").

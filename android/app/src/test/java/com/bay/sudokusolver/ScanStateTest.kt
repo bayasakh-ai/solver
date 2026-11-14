@@ -32,4 +32,24 @@ class ScanStateTest {
         assertEquals(ScanState.NeedsReview(ScanState.Reason.NO_UNIQUE_SOLUTION),
             ScanState.decide(SolveResult(puzzle, null, emptyList()), isSharp = false, frames = 5, window = 5))
     }
+
+    @Test fun smallGridAsksToMoveCloserButKeepsReading() {
+        // 640x480 frame: a 150x150 grid is 7.3% (fine), a 120x120 grid 4.7% (too small)
+        fun square(side: Float) = floatArrayOf(100f, 100f, 100f + side, 100f, 100f + side, 100f + side, 100f, 100f + side)
+        val big = ScanState.gridShare(square(150f), 640, 480)
+        val small = ScanState.gridShare(square(120f), 640, 480)
+        assertEquals(150.0 * 150 / (640 * 480), big, 1e-9)
+        assertEquals(ScanState.Reading(2, 5), ScanState.decide(null, true, 2, 5, big))
+        assertEquals(ScanState.Reading(2, 5, tooSmall = true), ScanState.decide(null, true, 2, 5, small))
+        assertEquals(ScanState.HoldSteady(2, 5, tooSmall = true), ScanState.decide(null, false, 2, 5, small))
+        // a settled result is shown as it is, however small
+        assertEquals(ScanState.Solved(0),
+            ScanState.decide(SolveResult(puzzle, solution, emptyList()), true, 5, 5, small))
+    }
+
+    @Test fun gridShareIgnoresCornerOrderAndPerspective() {
+        val quad = floatArrayOf(0f, 0f, 200f, 20f, 180f, 220f, 10f, 200f)
+        val reversed = floatArrayOf(10f, 200f, 180f, 220f, 200f, 20f, 0f, 0f)
+        assertEquals(ScanState.gridShare(quad, 640, 480), ScanState.gridShare(reversed, 640, 480), 1e-12)
+    }
 }

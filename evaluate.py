@@ -6,6 +6,13 @@
 Real photos: put e.g. news_shadow_01.jpg next to news_shadow_01.txt, where the
 .txt holds 9 lines like '. . 5 . 3 1 . 4 .' (the format run.py prints).
 Results are grouped by name without the trailing number (news_shadow).
+An optional <name>.user.txt marks handwritten cells ('.' elsewhere).
+solved_extra (real photos): solved, every given read right, and the only differences
+are extra digits that equal the solution in cells empty in BOTH truth files. The
+answers shown are then right, so it counts as solved, but is listed separately. A
+user digit read as printed is never forgiven: the goal is to ignore user ink.
+nogrid_*.jpg (no .txt): scenes without a puzzle (a book cover, a keyboard). "solved"
+there means no grid was reported; anything else is a false_grid.
 Failures are saved to eval_failures/ so you can look at them."""
 import argparse
 import glob
@@ -20,9 +27,10 @@ import cv2
 import numpy as np
 
 from run import process, show
+from solver import solve
 from answer_ink import step_for, DEEP, BRIGHT
 
-OUTCOMES = ["solved", "wrong_answer", "unsolvable", "too_few_digits", "no_grid"]
+OUTCOMES = ["solved", "solved_extra", "wrong_answer", "unsolvable", "too_few_digits", "no_grid", "false_grid"]
 
 
 def load_truth(path):
@@ -32,7 +40,7 @@ def load_truth(path):
     return grid
 
 
-def judge(res, truth_puzzle, truth_solution=None):
+def judge(res, truth_puzzle, truth_solution=None, truth_user=None):
     """Classify one result and count cells the model misread (before fixes)."""
     status = res["status"]
     misreads = None
@@ -41,10 +49,30 @@ def judge(res, truth_puzzle, truth_solution=None):
     if status == "solved":
         if truth_solution is None:  # real photo: givens must match, solution then follows
             ok = res["puzzle"] == truth_puzzle
+            if not ok and extras_only(res["puzzle"], truth_puzzle, truth_user):
+                return "solved_extra", misreads
         else:
             ok = res["solution"] == truth_solution
         status = "solved" if ok else "wrong_answer"
     return status, misreads
+
+
+def extras_only(puzzle, truth_puzzle, truth_user=None):
+    """True when puzzle = truth givens + digits that equal the truth's solution, all in
+    cells empty in the printed truth AND in the user truth (user digits read as
+    printed stay a failure)."""
+    sols = solve(truth_puzzle)
+    if len(sols) != 1:
+        return False
+    sol = sols[0]
+    for r in range(9):
+        for c in range(9):
+            got, want = puzzle[r][c], truth_puzzle[r][c]
+            if got == want:
+                continue
+            if want != 0 or got != sol[r][c] or (truth_user and truth_user[r][c]):
+                return False
+    return True
 
 
 def report(results):
@@ -56,7 +84,7 @@ def report(results):
         for status, _, _ in rows:
             counts[status] += 1
         n = len(rows)
-        ok = counts["solved"]
+        ok = counts["solved"] + counts["solved_extra"]
         total_ok += ok; total += n
         fails = ", ".join(f"{counts[o]} {o}" for o in OUTCOMES[1:] if counts[o])
         print(f"{cond:<{width}} {ok / n:>7.0%} {n:>4}   {fails}")
@@ -129,27 +157,93 @@ def run_synth(model, per_condition, seed):
     return results, steps
 
 
-def run_real(model, folder):
+def fit_frame(img, long_side):
+    """Resize a photo so its long side is long_side px (the app analyses 640x480)."""
+    if not long_side:
+        return img
+    f = long_side / max(img.shape[:2])
+    return cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA if f < 1 else cv2.INTER_LINEAR)
+
+
+def hand_counts(res, truth, user):
+    """For a photo with a .user.txt: how the printed / handwritten split and the reading
+    of the handwritten digits went. Counts over the truth's cells."""
+    kinds, got = res.get("kinds") or {}, res.get("user")
+    c = defaultdict(int)
+    if got is None:
+        return c
+    for r in range(9):
+        for col in range(9):
+            k = kinds.get((r, col))
+            if truth[r][col]:
+                c["printed"] += 1
+                c["printed_as_hand"] += k == "hand"
+                c["printed_unsure"] += k == "unsure"
+            elif user[r][col]:
+                c["hand"] += 1
+                c["hand_found"] += k == "hand"
+                c["hand_unsure"] += k == "unsure"
+                c["hand_read_right"] += got[r][col] == user[r][col]
+    return c
+
+
+def report_hand(hands):
+    if not hands:
+        return
+    print("\nprinted / handwritten split (photos with a .user.txt)")
+    print(f"{'photo':<28} {'printed->hand':>14} {'unsure':>7} {'hand found':>12} {'unsure':>7} {'hand read right':>16}")
+    total = defaultdict(int)
+    for name, c in hands:
+        for k, v in c.items():
+            total[k] += v
+    for name, c in hands + [("TOTAL", total)]:
+        if c["printed"] + c["hand"] == 0:
+            continue
+        print(f"{name:<28} {c['printed_as_hand']:>7}/{c['printed']:<6} {c['printed_unsure']:>7} "
+              f"{c['hand_found']:>6}/{c['hand']:<5} {c['hand_unsure']:>7} {c['hand_read_right']:>9}/{c['hand']:<6}")
+
+
+def finds_grid(img):
+    """Does either polarity report a grid? (process() only reports its first attempt.)"""
+    from grid import preprocess, find_grid, grid_accept
+    for attempt in (img, 255 - img):
+        gray, th = preprocess(attempt)
+        if find_grid(th, grid_accept(gray)) is not None:
+            return True
+    return False
+
+
+def run_real(model, folder, frame=None, find_frame=None):
     results = defaultdict(list)
     steps = defaultdict(list)
+    hands = []
     images = sorted(f for ext in ("jpg", "jpeg", "png")
                     for f in glob.glob(os.path.join(folder, f"*.{ext}"))
                     if not f.endswith("_solved.jpg"))
     for path in images:
         truth_path = os.path.splitext(path)[0] + ".txt"
         if not os.path.exists(truth_path):
-            print(f"  skipping {os.path.basename(path)} (no .txt truth)")
+            if os.path.basename(path).startswith("nogrid"):
+                results["nogrid"].append(("false_grid" if finds_grid(fit_frame(cv2.imread(path), frame)) else "solved", 0, 0))
+            else:
+                print(f"  skipping {os.path.basename(path)} (no .txt truth)")
             continue
         truth = load_truth(truth_path)
-        img = cv2.imread(path)
-        res = process(img, model)
-        status, misreads = judge(res, truth)
+        user_path = os.path.splitext(path)[0] + ".user.txt"
+        user = load_truth(user_path) if os.path.exists(user_path) else None
+        img = fit_frame(cv2.imread(path), frame)
+        find_scale = find_frame / max(img.shape[:2]) if find_frame else 1.0
+        res = process(img, model, find_scale=min(find_scale, 1.0))
+        status, misreads = judge(res, truth, truth_user=user)
         name = os.path.splitext(os.path.basename(path))[0]
         group = re.sub(r"[_-]?\d+$", "", name) or name
         results[group].append((status, misreads, 0))
         steps[group].append(step_counts(res, truth))
-        if status != "solved":
+        if user is not None:
+            hands.append((name, hand_counts(res, truth, user)))
+        if status not in ("solved", "solved_extra"):
             save_failure(img, name, status, res, truth)
+    report_hand(hands)
     return results, steps
 
 
@@ -158,14 +252,26 @@ def main():
     ap.add_argument("folder", nargs="?", help="folder of real photos with .txt truths")
     ap.add_argument("--synth", type=int, help="synthetic photos per condition")
     ap.add_argument("--seed", type=int, default=0, help="same seed = same test images")
+    ap.add_argument("--frame", type=int, help="real photos: resize so the long side is N px "
+                    "(640 = the app's 640x480 analysis frame)")
+    ap.add_argument("--no-grid-check", action="store_true", help="measure without looks_like_grid")
+    ap.add_argument("--no-hand", action="store_true", help="measure without the printed / handwritten split")
+    ap.add_argument("--find-frame", type=int, help="real photos: find the grid on a copy with "
+                    "long side N px, warp and read from the --frame image")
     args = ap.parse_args()
     if not args.folder and not args.synth:
         ap.error("give a folder of photos, or --synth N")
 
+    if args.no_hand:
+        import run
+        run.HAND = False
+    if args.no_grid_check:
+        import grid
+        grid.GRID_CHECK = False
     import tensorflow as tf
     model = tf.keras.models.load_model("digits.keras")
     shutil.rmtree("eval_failures", ignore_errors=True)
-    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder)
+    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder, args.frame, args.find_frame)
     if not results:
         print("nothing to evaluate")
         return

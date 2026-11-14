@@ -174,7 +174,7 @@ private fun ReadingGrid(session: CheckSession, sel: Int, onPick: (Int) -> Unit, 
         val mark = session.mark(i)
         val what = (if (v == 0) "empty" else "$v") + when (mark) {
             CellMark.UNSURE -> ", unsure"; CellMark.CORRECTED -> ", corrected"; CellMark.CHANGED -> ", changed by you"; CellMark.MINE -> ", yours"; CellMark.NONE -> ""
-        } + if (i in dups) ", repeats" else ""
+        } + if (i in dups) ", same digit twice in its row, column or box" else ""
         Box(
             Modifier.fillMaxSize()
                 .then(if (i == sel) Modifier.border(2.dp, Classical.Ink) else Modifier)
@@ -225,18 +225,34 @@ private fun Legend(session: CheckSession, modifier: Modifier) {
             }
         }
         val dups = session.duplicates.size
-        if (dups > 0 || session.mineCount > 0) {
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (dups > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(22.dp).border(1.5.dp, colors.conflict, MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
-                        Text("5", style = SudokuType.PrintedDigit.copy(fontSize = 12.sp, lineHeight = 12.sp))
-                    }
-                    Text("Repeats · $dups", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
+        // own line (the label is long); tap -> what it means and what to do
+        if (dups > 0) {
+            var open by remember { mutableStateOf(false) }
+            Row(
+                Modifier.clip(MaterialTheme.shapes.extraSmall)
+                    .clickable(role = Role.Button, onClickLabel = if (open) "Hide the explanation" else "Explain") { open = !open }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(22.dp).border(1.5.dp, colors.conflict, MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
+                    Text("5", style = SudokuType.PrintedDigit.copy(fontSize = 12.sp, lineHeight = 12.sp))
                 }
-                if (session.mineCount > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { MineDigit(4, sizeSp = 16) }
-                    Text("Yours · ${session.mineCount}", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
-                }
+                Text("$dups cells repeat a digit", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
+                Icon(LucideIcons.Info, null, tint = Classical.TextBody2, modifier = Modifier.size(16.dp))
+            }
+            if (open) Text(
+                "The same digit is twice in one row, column or box. A sudoku never allows that, so the camera " +
+                    "misread one of the framed cells. Compare them with your paper or the Photo view, tap the wrong " +
+                    "one and pick the digit printed there, or Empty if the cell is blank. If one is your own " +
+                    "writing, tap it and choose Mark as mine.",
+                style = MaterialTheme.typography.bodySmall, color = Classical.TextSecondary,
+                modifier = Modifier.padding(start = 30.dp),
+            )
+        }
+        if (session.mineCount > 0) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { MineDigit(4, sizeSp = 16) }
+                Text("Yours · ${session.mineCount}", style = MaterialTheme.typography.bodySmall, color = Classical.TextBody2)
             }
         }
         if (session.capture.inkIgnored > 0) {
@@ -275,7 +291,7 @@ private fun BottomActions(session: CheckSession, problem: CheckResult?, onRescan
 
 private fun summary(s: CheckSession): String {
     val look = s.unsureCount + s.correctedCount
-    if (s.duplicates.isNotEmpty()) return "A digit repeats (coral frames), so one of them is misread. Tap it to fix it."
+    if (s.duplicates.isNotEmpty()) return "Same digit twice in a row, column or box (coral frames), so one of them is misread. Tap it to fix it."
     return "${s.filled} digits read" +
         (if (s.mineCount > 0) ", ${s.mineCount} yours" else "") +
         (if (look > 0) ", $look worth a look" else "") +
@@ -341,14 +357,15 @@ private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
     if (s.suggestionSolves(i) && s.mark(i) != CellMark.CORRECTED) {
         val d = s.suggestion(i)!!
         val title = when {
-            i in s.duplicates -> "This $read repeats"
+            i in s.duplicates -> "This $read is here twice"
             s.mark(i) == CellMark.UNSURE && v != 0 -> "Is this a $v?"
             else -> "Read as $read"
         }
         return title to "${if (d == 0) "Empty" else "$d"} here gives the puzzle exactly one solution (dashed)."
     }
-    if (i in s.duplicates) return "This $read repeats" to
-        "It is already in this cell’s row, column or box, so one of them is misread. Pick what the paper shows."
+    if (i in s.duplicates) return "This $read is here twice" to
+        "Another $read is in this cell’s row, column or box (coral frame), so one of the two is misread. " +
+        "If this one is wrong, pick what the paper shows."
     return when (s.mark(i)) {
         CellMark.CORRECTED -> {
             val f = s.fix(i)!!
@@ -358,6 +375,7 @@ private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
         }
         CellMark.UNSURE -> when (s.unsureReason(i)) {
             UnsureReason.INK -> "Is this printed?" to "The ink is close to a pen colour. If you wrote it, make it Empty (dashed)."
+            UnsureReason.HAND -> "Is this printed?" to "Read as $v, but it looks a little like handwriting. If you wrote it, choose Mark as mine."
             else -> "Is this a $v?" to "Read as $v, but not confidently. It might be a ${s.capture.secondGuess[i]} (dashed)."
         }
         CellMark.MINE -> "You wrote $v" to "Marked as yours: it goes on the board as your entry, and the puzzle is solved without it."
@@ -398,7 +416,7 @@ private fun PickerKey(d: Int, current: Boolean, dashed: Boolean, repeats: Boolea
             .semantics {
                 selected = current
                 val name = if (d == 0) "Empty" else "$d"
-                if (dashed || repeats) contentDescription = name + (if (dashed) ", suggested" else "") + (if (repeats) ", repeats a printed $d" else "")
+                if (dashed || repeats) contentDescription = name + (if (dashed) ", suggested" else "") + (if (repeats) ", a printed $d is already in this row, column or box" else "")
             }
             // repeats: a coral corner notch (shape + colour); the key still works
             .drawBehind {

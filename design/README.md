@@ -12,6 +12,13 @@ screens/support.js is only needed to open the .dc.html pages in a browser.
 screens/older/Sudoku Lens.dc.html is the first version. Use it only if v2 is
 missing a screen; anything in it that contradicts v2 is outdated.
 
+icon/: launcher icon. make_icon.py draws every direction (directions.png) and writes
+the Android resources for the chosen one; the app's icon files are generated, don't
+edit them by hand. See CLAUDE.md, "Welcome + launcher icon".
+
+Not designed here (built in the app from existing pieces): Play a puzzle, the welcome
+pages, the no-camera screen.
+
 screenshots/: add PNGs of each screen here (visual target for implementation).
 
 When the design and CLAUDE.md disagree: design files decide how screens LOOK;

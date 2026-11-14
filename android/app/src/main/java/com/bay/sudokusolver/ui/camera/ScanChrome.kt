@@ -101,12 +101,14 @@ fun barContent(
                 onContinue?.let { BarAction("Continue", LucideIcons.Play, primary = true, onClick = it) },
                 onPlayPuzzle?.let { BarAction("Play a puzzle", LucideIcons.Grid, onClick = it) },
             ))
-        is ScanState.Reading -> BarContent("Puzzle found", LucideIcons.ScanLine,
-            "Reading digits… ${state.frames}/${state.window}", "Keep the whole grid in view",
-            Progress(state.frames, state.window, paused = false))
-        is ScanState.HoldSteady -> BarContent("Hold steady", LucideIcons.Move,
-            "Hold steady", "The image is blurred. Paused at ${state.frames}/${state.window}.",
-            Progress(state.frames, state.window, paused = true))
+        is ScanState.Reading -> if (state.tooSmall) moveCloser(state.frames, state.window, paused = false)
+            else BarContent("Puzzle found", LucideIcons.ScanLine,
+                "Reading digits… ${state.frames}/${state.window}", "Keep the whole grid in view",
+                Progress(state.frames, state.window, paused = false))
+        is ScanState.HoldSteady -> if (state.tooSmall) moveCloser(state.frames, state.window, paused = true)
+            else BarContent("Hold steady", LucideIcons.Move,
+                "Hold steady", "The image is blurred. Paused at ${state.frames}/${state.window}.",
+                Progress(state.frames, state.window, paused = true))
         is ScanState.Solved -> {
             val answers = result?.puzzle?.count { it == 0 } ?: 0
             val fixed = if (state.fixes > 0) " · ${plural(state.fixes, "misread digit")} fixed" else ""
@@ -139,6 +141,11 @@ fun barContent(
         )
     }
 }
+
+/** Grid found but too small to read well (ScanState.MOVE_CLOSER_SHARE): reading carries on. */
+private fun moveCloser(frames: Int, window: Int, paused: Boolean) = BarContent("Move closer", LucideIcons.ScanLine,
+    "Move closer", "The grid is small. Let it fill more of the frame.",
+    Progress(frames, window, paused = paused))
 
 /** Debug line: frame stats, as in the design's stats chip. */
 fun statsText(r: FrameResult?): String = when {
