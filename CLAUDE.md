@@ -353,6 +353,7 @@ Tests (status):
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
+  export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
@@ -369,6 +370,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81
     PuzzleReader.kt    PuzzleTracker (frame voting) + SelfCorrect
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
+    GridCheck.kt       is a found quad a sudoku? box-line score (pure Kotlin)   <-> grid.box_line_score
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
     Solver.kt          Kotlin port of solver.py
     AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
@@ -405,9 +407,10 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
-                       GameStateTest, GeneratorTest, WelcomeTest
-                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/
-                       from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py)
+                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest
+                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/
+                       from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /
+                       export_grid_check_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt),
                        PipelineTimingTest (phone, measurement only: find/read time at 640x480,
                        1280x960, find-at-640/read-at-1280; photos pushed with adb, see its doc)
@@ -440,6 +443,8 @@ the app between previews; it reuses the running one).
    then a last-resort border >= 3% of the frame (small grids; their thin cell lines blur
    away). Grids found by the earlier methods are found the same way. Lowering the 10%
    border floor or the cell floor instead broke puzzle1. Corners ordered TL, TR, BR, BL.
+   **Every candidate must pass the grid check** (`looks_like_grid` / `GridCheck`, see
+   Hard-won decisions); a rejected one is skipped and the next method gets its turn.
 4. `warp` to 450x450 (50 px cells). If `looksDark` (per-cell vote), invert it.
 4b. **Orientation** (orientation.py / Orientation.kt): corners are ordered clockwise from
    the one nearest the top-left on screen, which is a quarter turn off past 45 deg. On a
@@ -486,6 +491,30 @@ the app between previews; it reuses the running one).
   149/150 with margins down to 0.010 (the model is confidently wrong on sideways
   digits), so sudoku consistency confirms it. Live frames track corners instead of
   re-deciding, which keeps the cost to one 4-way reading per grid.
+- **A quad is a grid only if it shows its box lines** (2026-11-14, `grid.box_line_score`
+  <-> `GridCheck.boxLineScore`). The finder returned any four-cornered shape, so the
+  outline flashed onto a book cover, a title block and a keyboard (owner's phone test;
+  `photos/nogrid_*`: the 10% border, the hull fallback and the 3% border all did it).
+  Check, on the flattened dark-on-light quad: `line_ink` (adaptive threshold 21, **C=2**,
+  for this check only), then **3 of the 4 inner box lines** must be ink over >= 0.93 of
+  their length (best column/row within 9 px, ink within 5 px sideways counts).
+  - **Only the box lines**: the thin cell lines of several screen sudokus are too faint
+    (2-6 of 16 inner lines found on solved screen_web / sudokucom photos).
+  - **Not `binarize` (C=10), not all 4 lines.** The first version (C=10, weakest line
+    >= 0.6) separated sharp photos perfectly (270 solved grids >= 0.77, false <= 0.41)
+    but on the phone the grid was found late and only up close: with real grids at
+    30-100% size and blur sigma 0-2 it rejected 147 of 716. Now 23 of 716 (sharp set:
+    0/270, min 0.976); false quads 0/376 (5 no-grid photos jittered, shrunk, blurred:
+    <= 0.77, one mirrored-title artefact at 0.907). Line prominence (line minus
+    background share) was worse: moire raises the background.
+  - **Live: judged once** (`GridCheck.sameQuad`, Kotlin only): a quad whose corners are
+    within 15% of a side of the grid already on screen is kept without the check, so a
+    blurred frame doesn't drop the outline and restart the vote.
+  Result: nogrid 0/5 -> 5/5 rejected, --synth 20 identical (90% over 280, Windows),
+  photos at 640 identical for the 28 with truths, book 2/2; size x blur sweep (11 photos,
+  15 settings): 0 solvable frames lost (first version: 6 of 55). Not measured: curved
+  pages, phone timing (a new grid is warped + voted twice; `PipelineTimingTest` includes
+  the check).
 - **TFLite batch is fixed at 81.** Resizing the input per frame desynced the output
   shape and crashed (`[24, 9]` vs `[23, 9]`). Never call `resizeInput` per frame.
 - **Sharpness is measured inside the warped grid only** — a blank wall scores ~11
@@ -509,6 +538,7 @@ python run.py photo.jpg                   # single photo -> photo_solved.jpg
 python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x_inspect.png
 python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
+python export_grid_check_cases.py         # after changing box_line_score / BOX_LINES
 python export_ink_cases.py                # after changing ink.py / piece stats in grid.py
 python export_background_cases.py         # after changing cell_backgrounds / answer_ink.py
 python design/icon/make_icon.py [--apply scan_dark]   # launcher icon (pip install fonttools cairosvg pillow)
@@ -523,6 +553,9 @@ cp test_cells.bin test_expected.txt android/app/src/androidTest/assets/
 
 Android (from `android/`): `./gradlew testDebugUnitTest` (JVM tests),
 `./gradlew connectedDebugAndroidTest` (phone tests), or run from Android Studio.
+
+`photos/nogrid_*.jpg` (no truth file): scenes without a puzzle; evaluate.py counts a
+reported grid there as `false_grid`. `--no-grid-check` measures without the check.
 
 Truth file format (same as run.py prints): 9 lines like `. . 5 . 3 1 . 4 .`.
 Name real photos by condition: `news_shadow_01.jpg` + `news_shadow_01.txt`.

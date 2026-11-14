@@ -51,11 +51,12 @@ class PipelineTimingTest {
                         val corners: Array<Point>? = if (mode == "hybrid") {
                             val small = Mat().also { Imgproc.resize(frame, it, Size(), 0.5, 0.5, Imgproc.INTER_AREA) }
                             val th = GridDetector.preprocess(small)
-                            GridDetector.findGrid(th)?.map { Point(it.x * 2, it.y * 2) }?.toTypedArray()
+                            GridDetector.findGrid(th) { c -> GridDetector.looksLikeGrid(frame, c.map { Point(it.x * 2, it.y * 2) }.toTypedArray()) }
+                                ?.map { Point(it.x * 2, it.y * 2) }?.toTypedArray()
                                 .also { th.release(); small.release() }
                         } else {
                             val th = GridDetector.preprocess(frame)
-                            GridDetector.findGrid(th).also { th.release() }
+                            GridDetector.findGrid(th) { GridDetector.looksLikeGrid(frame, it) }.also { th.release() }
                         }
                         val tFind = ms(t0)
                         if (corners == null) { if (k >= 2) find.add(tFind); return@repeat }

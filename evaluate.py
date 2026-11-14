@@ -11,6 +11,8 @@ solved_extra (real photos): solved, every given read right, and the only differe
 are extra digits that equal the solution in cells empty in BOTH truth files. The
 answers shown are then right, so it counts as solved, but is listed separately. A
 user digit read as printed is never forgiven: the goal is to ignore user ink.
+nogrid_*.jpg (no .txt): scenes without a puzzle (a book cover, a keyboard). "solved"
+there means no grid was reported; anything else is a false_grid.
 Failures are saved to eval_failures/ so you can look at them."""
 import argparse
 import glob
@@ -28,7 +30,7 @@ from run import process, show
 from solver import solve
 from answer_ink import step_for, DEEP, BRIGHT
 
-OUTCOMES = ["solved", "solved_extra", "wrong_answer", "unsolvable", "too_few_digits", "no_grid"]
+OUTCOMES = ["solved", "solved_extra", "wrong_answer", "unsolvable", "too_few_digits", "no_grid", "false_grid"]
 
 
 def load_truth(path):
@@ -163,6 +165,16 @@ def fit_frame(img, long_side):
     return cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA if f < 1 else cv2.INTER_LINEAR)
 
 
+def finds_grid(img):
+    """Does either polarity report a grid? (process() only reports its first attempt.)"""
+    from grid import preprocess, find_grid, grid_accept
+    for attempt in (img, 255 - img):
+        gray, th = preprocess(attempt)
+        if find_grid(th, grid_accept(gray)) is not None:
+            return True
+    return False
+
+
 def run_real(model, folder, frame=None, find_frame=None):
     results = defaultdict(list)
     steps = defaultdict(list)
@@ -172,7 +184,10 @@ def run_real(model, folder, frame=None, find_frame=None):
     for path in images:
         truth_path = os.path.splitext(path)[0] + ".txt"
         if not os.path.exists(truth_path):
-            print(f"  skipping {os.path.basename(path)} (no .txt truth)")
+            if os.path.basename(path).startswith("nogrid"):
+                results["nogrid"].append(("false_grid" if finds_grid(fit_frame(cv2.imread(path), frame)) else "solved", 0, 0))
+            else:
+                print(f"  skipping {os.path.basename(path)} (no .txt truth)")
             continue
         truth = load_truth(truth_path)
         user_path = os.path.splitext(path)[0] + ".user.txt"
@@ -197,12 +212,16 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="same seed = same test images")
     ap.add_argument("--frame", type=int, help="real photos: resize so the long side is N px "
                     "(640 = the app's 640x480 analysis frame)")
+    ap.add_argument("--no-grid-check", action="store_true", help="measure without looks_like_grid")
     ap.add_argument("--find-frame", type=int, help="real photos: find the grid on a copy with "
                     "long side N px, warp and read from the --frame image")
     args = ap.parse_args()
     if not args.folder and not args.synth:
         ap.error("give a folder of photos, or --synth N")
 
+    if args.no_grid_check:
+        import grid
+        grid.GRID_CHECK = False
     import tensorflow as tf
     model = tf.keras.models.load_model("digits.keras")
     shutil.rmtree("eval_failures", ignore_errors=True)

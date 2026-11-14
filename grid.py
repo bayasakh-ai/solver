@@ -11,6 +11,8 @@ MIN_GRID_AREA = 0.1    # border method: grid outline >= this share of the frame
 HULL_FALLBACK = True  # after the cell method: hull of the biggest contour + edge snapping
 SMALL_GRID_AREA = 0.03  # last resort, after the cell method: a smaller border (small grid, measured: below ~6% of a 640x480 frame digits stop reading)
 MIN_CELL_AREA = 0.0004  # cell method: one cell's hole >= this share of the frame
+GRID_CHECK = True  # a found quad counts only if its flattened image shows the box lines
+BOX_LINES = 0.93   # looks_like_grid: 3 of the 4 inner box lines cover >= this share (gentle threshold)
 
 
 def preprocess(img):
@@ -36,22 +38,77 @@ def order_corners(pts):
     return pts[[order[(start + j) % 4] for j in range(4)]]
 
 
-def find_grid(th, min_area_ratio=None):
+def find_grid(th, accept=None):
     """Find the puzzle's 4 corners. Tries the fast outer-border method first,
     then falls back to locating the grid from its cells, then to the hull of a
-    decorated border, then to a smaller border (small grid)."""
-    corners = _find_by_border(th, MIN_GRID_AREA if min_area_ratio is None else min_area_ratio)
+    decorated border, then to a smaller border (small grid).
+    accept(corners) -> bool judges every candidate (see grid_accept): a rejected one
+    is skipped and the search goes on, so a book cover or a keyboard is not a grid
+    and a real grid next to one still gets its turn."""
+    ok = accept if accept is not None and GRID_CHECK else (lambda corners: True)
+    corners = _find_by_border(th, MIN_GRID_AREA, ok)
     if corners is None:
         rough = _find_by_cells(th)
         if rough is not None:
             corners = _refine_edges(th, order_corners(rough.astype(np.float32)))
+            if not ok(corners):
+                corners = None
     if corners is None and HULL_FALLBACK:
         rough = _find_by_hull(th, MIN_GRID_AREA)
         if rough is not None:
             corners = _refine_edges(th, rough)
+            if not ok(corners):
+                corners = None
     if corners is None and SMALL_GRID_AREA < MIN_GRID_AREA:
-        corners = _find_by_border(th, SMALL_GRID_AREA)
+        corners = _find_by_border(th, SMALL_GRID_AREA, ok, below=MIN_GRID_AREA)
     return corners
+
+
+def line_ink(warped):
+    """Ink for the grid check only: a gentler threshold than binarize() (C=2, not 10), so
+    blurred and far-away grid lines still show. Never used for reading digits."""
+    return cv2.adaptiveThreshold(warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                 cv2.THRESH_BINARY_INV, 21, 2)
+
+
+def box_line_score(ink, tol=9, widen=5):
+    """How grid-like a flattened quad is, from its line_ink(): the second weakest of the
+    4 inner box lines (1/3 and 2/3 across, both directions), so 3 of the 4 must show
+    (glare or a finger may hide one). A line's strength = the best share of its length
+    that is ink, among the columns (rows) within tol px of where it should be; ink
+    within widen px sideways counts (lines aren't perfectly straight).
+    Only the thick box lines: thin cell lines of some screen sudokus are too faint,
+    and small grids lose them to blur.
+    Measured (2026-11-14, 640 px frames): 270 solved grids (photos + synth) >= 0.976;
+    446 more real grids at 30-100% size with Gaussian blur sigma 0-2: 23 below 0.93;
+    376 false quads from the owner's no-grid photos (book cover, title, keyboard;
+    jittered, shrunk, blurred) <= 0.77 but one at 0.907.
+    The first version used binarize() (C=10) and the weakest line at 0.6: fine on sharp
+    photos, but it rejected 147 of those 716 real grids (blur, distance), so on the
+    phone the grid was found late and only up close. Mirrored by GridCheck.boxLineScore."""
+    n = ink.shape[0]
+    lines = []
+    for axis in (0, 1):  # 0: vertical lines (share of each column), 1: horizontal
+        wide = cv2.dilate(ink, np.ones((1, widen) if axis == 0 else (widen, 1), np.uint8)) > 0
+        share = wide.mean(axis=axis)
+        for i in (3, 6):
+            c = i * n // 9
+            lines.append(float(share[c - tol:c + tol + 1].max()))
+    return sorted(lines)[1]
+
+
+def looks_like_grid(warped):
+    """warped: flattened quad, dark ink on light (after the looks_dark flip)."""
+    return box_line_score(line_ink(warped)) >= BOX_LINES
+
+
+def grid_accept(gray):
+    """accept() for find_grid: flatten the candidate from gray, make it dark-on-light
+    like the reader will, and ask looks_like_grid."""
+    def accept(corners):
+        w = descreen(warp(gray, np.asarray(corners, np.float32))[0])
+        return looks_like_grid(255 - w if looks_dark(w) else w)
+    return accept
 
 
 def _refine_edges(th, rough, pad=40, band=30):
@@ -95,17 +152,22 @@ def _refine_edges(th, rough, pad=40, band=30):
     return cv2.perspectiveTransform(quad, np.linalg.inv(M)).reshape(4, 2)
 
 
-def _find_by_border(th, min_area_ratio):
+def _find_by_border(th, min_area_ratio, accept=lambda corners: True, below=None):
     """Largest convex 4-corner contour = the puzzle border. Fails when a page
-    rule or text touches the border, because the shapes merge into one."""
+    rule or text touches the border, because the shapes merge into one.
+    below: skip contours of this share or more (the first pass already judged them)."""
     contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     h, w = th.shape
     for c in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
         if cv2.contourArea(c) < min_area_ratio * h * w:
             break
+        if below is not None and cv2.contourArea(c) >= below * h * w:
+            continue
         approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
         if len(approx) == 4 and cv2.isContourConvex(approx):
-            return order_corners(approx.reshape(4, 2).astype(np.float32))
+            corners = order_corners(approx.reshape(4, 2).astype(np.float32))
+            if accept(corners):
+                return corners
     return None
 
 

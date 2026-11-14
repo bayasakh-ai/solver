@@ -6,7 +6,7 @@ import sys
 import cv2
 import numpy as np
 
-from grid import descreen, preprocess, find_grid, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
+from grid import descreen, preprocess, find_grid, grid_accept, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
 from orientation import is_consistent, turn_score, choose_turn, roll_corners
 
@@ -122,11 +122,12 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     gray, th = preprocess(img)
     if find_scale < 1:
         small = cv2.resize(img, None, fx=find_scale, fy=find_scale, interpolation=cv2.INTER_AREA)
-        corners = find_grid(preprocess(small)[1])
+        corners = find_grid(preprocess(small)[1],
+                            lambda c: grid_accept(gray)((c / find_scale).astype(np.float32)))
         if corners is not None:
             corners = (corners / find_scale).astype(np.float32)
     else:
-        corners = find_grid(th)
+        corners = find_grid(th, grid_accept(gray))
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)

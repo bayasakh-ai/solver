@@ -145,7 +145,14 @@ class FrameAnalyzer(
             val searchedInverted = polarity.searchInverted
             val source = if (searchedInverted) Mat().also { Core.bitwise_not(gray, it) } else gray
             val th = GridDetector.preprocess(source)
-            val corners = GridDetector.findGrid(th)
+            // a quad counts only if its flattened image shows the box lines (GridCheck):
+            // otherwise book covers, titles and keyboards flash up as grids. Judged once:
+            // the grid already on screen is kept as it is, so a blurred frame doesn't drop it
+            val onScreen = smoothed
+            val corners = GridDetector.findGrid(th) { quad ->
+                (onScreen != null && GridCheck.sameQuad(flatten(quad.toList()), onScreen)) ||
+                    GridDetector.looksLikeGrid(source, quad)
+            }
             th.release()
             if (corners == null) polarity.onMiss()
 

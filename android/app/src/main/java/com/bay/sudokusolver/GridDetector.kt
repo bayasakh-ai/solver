@@ -60,15 +60,46 @@ object GridDetector {
 
     /** Fast border method first, then the cell-lattice fallback with edge snapping, then the
      *  hull of a decorated border with edge snapping, then a smaller border as a last
-     *  resort (a small grid: its thin cell lines blur away). Same order as grid.find_grid. */
-    fun findGrid(th: Mat, minAreaRatio: Double = MIN_GRID_AREA): Array<Point>? {
-        findByBorder(th, minAreaRatio)?.let { return it }
-        findByCells(th)?.let { return refineEdges(th, orderCorners(it)) }
-        findByHull(th, minAreaRatio)?.let { return refineEdges(th, it) }
-        return if (SMALL_GRID_AREA < minAreaRatio) findByBorder(th, SMALL_GRID_AREA) else null
+     *  resort (a small grid: its thin cell lines blur away). Same order as grid.find_grid.
+     *  [accept] judges every candidate (see [looksLikeGrid]): a rejected one is skipped and
+     *  the search goes on, so a book cover or a keyboard is not a grid and a real grid
+     *  next to one still gets its turn. */
+    fun findGrid(th: Mat, accept: (Array<Point>) -> Boolean = { true }): Array<Point>? {
+        findByBorder(th, MIN_GRID_AREA, accept)?.let { return it }
+        findByCells(th)?.let { rough -> refineEdges(th, orderCorners(rough)).let { if (accept(it)) return it } }
+        findByHull(th, MIN_GRID_AREA)?.let { rough -> refineEdges(th, rough).let { if (accept(it)) return it } }
+        return findByBorder(th, SMALL_GRID_AREA, accept, below = MIN_GRID_AREA)
     }
 
-    private fun findByBorder(th: Mat, minAreaRatio: Double): Array<Point>? {
+    /**
+     * accept() for [findGrid]: flatten the candidate from [gray], make it dark-on-light
+     * like the reader will, and ask GridCheck for the box lines. Same as grid.grid_accept.
+     */
+    fun looksLikeGrid(gray: Mat, corners: Array<Point>): Boolean {
+        val (warped, m) = warp(gray, corners)
+        m.release()
+        val pixels = ByteArray(WARP_SIZE * WARP_SIZE)
+        warped.get(0, 0, pixels)
+        if (Polarity.looksDark(pixels, WARP_SIZE)) Core.bitwise_not(warped, warped)
+        val ink = lineInk(warped)
+        ink.get(0, 0, pixels)
+        warped.release(); ink.release()
+        return GridCheck.looksLikeGrid(pixels, WARP_SIZE)
+    }
+
+    /** Ink for the grid check only: gentler than [binarize] (C=2, not 10), so blurred and
+     *  far-away grid lines still show. Never used for reading digits. Same as grid.line_ink. */
+    fun lineInk(warped: Mat): Mat {
+        val th = Mat()
+        Imgproc.adaptiveThreshold(warped, th, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+            Imgproc.THRESH_BINARY_INV, 21, 2.0)
+        return th
+    }
+
+    /** [below]: skip contours of this share or more (the first pass already judged them). */
+    private fun findByBorder(
+        th: Mat, minAreaRatio: Double, accept: (Array<Point>) -> Boolean, below: Double? = null,
+    ): Array<Point>? {
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
         Imgproc.findContours(th, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
@@ -76,14 +107,17 @@ object GridDetector {
         val imageArea = th.rows().toDouble() * th.cols()
         try {
             for (c in contours.sortedByDescending { Imgproc.contourArea(it) }.take(5)) {
-                if (Imgproc.contourArea(c) < minAreaRatio * imageArea) break
+                val area = Imgproc.contourArea(c)
+                if (area < minAreaRatio * imageArea) break
+                if (below != null && area >= below * imageArea) continue
                 val c2f = MatOfPoint2f(*c.toArray())
                 val approx = MatOfPoint2f()
                 Imgproc.approxPolyDP(c2f, approx, 0.02 * Imgproc.arcLength(c2f, true), true)
                 val pts = approx.toArray()
                 c2f.release(); approx.release()
                 if (pts.size == 4 && Imgproc.isContourConvex(MatOfPoint(*pts))) {
-                    return orderCorners(pts)
+                    val corners = orderCorners(pts)
+                    if (accept(corners)) return corners
                 }
             }
         } finally {
