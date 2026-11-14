@@ -174,7 +174,8 @@ private fun ReadingGrid(session: CheckSession, sel: Int, onPick: (Int) -> Unit, 
         val mark = session.mark(i)
         val what = (if (v == 0) "empty" else "$v") + when (mark) {
             CellMark.UNSURE -> ", unsure"; CellMark.CORRECTED -> ", corrected"; CellMark.CHANGED -> ", changed by you"; CellMark.MINE -> ", yours"; CellMark.NONE -> ""
-        } + if (i in dups) ", same digit twice in its row, column or box" else ""
+        } + (if (session.mineUnsure(i)) ", unsure" else "") +
+            if (i in dups) ", same digit twice in its row, column or box" else ""
         Box(
             Modifier.fillMaxSize()
                 .then(if (i == sel) Modifier.border(2.dp, Classical.Ink) else Modifier)
@@ -183,7 +184,7 @@ private fun ReadingGrid(session: CheckSession, sel: Int, onPick: (Int) -> Unit, 
             contentAlignment = Alignment.Center,
         ) {
             if (i in dups) Box(Modifier.fillMaxSize().padding(3.dp).border(1.5.dp, colors.conflict, MaterialTheme.shapes.extraSmall))
-            if (mark == CellMark.UNSURE) Box(Modifier.fillMaxSize(0.8f).border(1.5.dp, colors.unsureRing, CircleShape))
+            if (mark == CellMark.UNSURE || session.mineUnsure(i)) Box(Modifier.fillMaxSize(0.8f).border(1.5.dp, colors.unsureRing, CircleShape))
             if (v != 0 && mark == CellMark.MINE) MineDigit(v)
             else if (v != 0) Digit(v, underline = mark == CellMark.CORRECTED)
         }
@@ -378,7 +379,11 @@ private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
             UnsureReason.HAND -> "Is this printed?" to "Read as $v, but it looks a little like handwriting. If you wrote it, choose Mark as mine."
             else -> "Is this a $v?" to "Read as $v, but not confidently. It might be a ${s.capture.secondGuess[i]} (dashed)."
         }
-        CellMark.MINE -> "You wrote $v" to "Marked as yours: it goes on the board as your entry, and the puzzle is solved without it."
+        CellMark.MINE -> if (s.mineUnsure(i)) {
+            val other = s.capture.userSecondGuess[i]
+            "Did you write $v?" to "Your handwriting was read as $v, but not confidently" +
+                (if (other != 0) ". It might be a $other (dashed)." else ".") + " Pick the digit you wrote."
+        } else "You wrote $v" to "Marked as yours: it goes on the board as your entry, and the puzzle is solved without it."
         CellMark.CHANGED -> (if (v == 0) "You cleared it" else "You set $v") to "Pick again if it still doesn’t match the paper."
         CellMark.NONE -> "Read as $read" to "Pick what the paper shows."
     }

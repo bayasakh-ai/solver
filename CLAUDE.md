@@ -47,8 +47,10 @@ Techniques, easiest first:
 1. **Last empty cell** in a row/column/box — "Only 6 is missing in this row."
 2. **Hidden single** — "7 can only go in one place in this box."
 3. **Naked single** — "This cell sees 1,2,3,4,5,6,8,9 — only 7 is left."
-4. **Advanced** (pairs, pointing, etc.) — later. Until supported, say "This step needs
-   an advanced technique" and offer to reveal the cell.
+4. **Pointing, claiming, naked pair, hidden pair** (built 2026-11-15, see "Pattern
+   hints" below) — one elimination plus the single it leaves.
+5. **Longer chains** (X-wing, several eliminations in a row) — later. Until supported,
+   say "This step needs an advanced technique" and offer to reveal the cell.
 
 Hints are **progressive**: (1) *Nudge* — highlight a region only ("Look at this box");
 (2) *Technique* — name the reason; (3) *Show me* — animated explanation ending with
@@ -176,6 +178,24 @@ architecture and rules.
     technique), glow at 46%, then the digit. Last empty cell: the unit's eight digits
     are ticked off one by one (a short amber stroke under each), glow at 30%: less to
     show, so it fills sooner. Level 2 and animations-off show everything at once.
+  - **Pattern hints (2026-11-15, `HintAdvanced.kt`, `HintAdvancedTest`; not seen on
+    the phone yet).** Pointing, claiming, naked pair, hidden pair. A hint must end with
+    a digit and the board keeps no candidates between hints (notes are the player's),
+    so each is **one elimination plus the single it leaves**, worked out fresh from the
+    digits on the board. Three levels like the singles; Show me boxes the pattern's
+    cells with their candidate digits, shows the lost digit struck through, frames the
+    unit with one place left, then writes the digit. Measured:
+    - **Real puzzles** (13 distinct ones in photos/, 5 rated Hard): reveals needed
+      before 1, 1, 3, 4, 4 -> now **0, 0, 2, 0, 0** (puzzle2, puzzle3, the "expert"
+      site, NY Times, sudoku.com). puzzle3 = one pointing step.
+    - **Generated Hard as it was** (anything singles can't solve, 60 seeds): 46 pattern
+      hints, 94 reveals left, 45 puzzles still needing one. Chaining the eliminations
+      or adding triples: 82 / 43. Those puzzles need much harder techniques, so:
+    - **Generator: Hard = singles run out AND every stuck point has a pattern hint**
+      (`HintEngine.explains`). 60/60 seeds, ~25 givens, 1-3 pattern hints each
+      (pointing 44, naked pair 24, claiming 12, hidden pair 10), still tens of ms.
+    - The rating is unchanged (4 dots; Hard = singles are not enough), so a scanned
+      puzzle can be Hard and still need a reveal.
   - **Next hint at level 3:** Replay shrinks to its icon; *Next hint* writes this
     hint's digit and opens the following hint (counted as a new hint), *Keep playing*
     writes it and closes. Three buttons in one row: check the fit on a narrow phone
@@ -194,7 +214,9 @@ architecture and rules.
     `Generator.generate` digs a random grid and **refills any hole that would make
     HintEngine rate it harder** than chosen, then retries until the rating is exact.
     So the rating is the hint engine's by construction (GeneratorTest: 40/40 seeds).
-    Givens floor: Easy 36, Medium 30, Tricky 26, Hard none (ends at 23-26). Desktop
+    Givens floor: Easy 36, Medium 30, Tricky 26, Hard none (ends at ~25; since
+    2026-11-15 a Hard hole is kept only while the pattern hints can still carry the
+    puzzle, see "Pattern hints"). Desktop
     JVM ~2-53 ms per puzzle; runs off the main thread. A generated game in progress is
     offered as Carry on. Header kicker: "New puzzle" vs "Scanned puzzle".
   - **Mark as mine** (Check, fix sheet): the user says a digit is their writing (pencil,
@@ -456,10 +478,18 @@ from print by colour or darkness (see above), so the signal is **shape**.
   all of them. So the book's puzzles are not all proper, or need a rule we don't know
   (not diagonals: book_pencil_02 has two 4s on the main diagonal). **Owner's decision
   still needed:** today such a scan ends on Check with "more than one solution".
-- **Still to do:** phone test (above); corner notes, crossed-out digits (book_pen_02
-  r4c1); low-confidence handwritten readings ("Is this a 4 or a 9?" before judging,
-  v1.1); typed entries on screens (screen_filled_*: look printed, 0/61 found); a
-  thick handwriting next to thin print (see `handwritten` below).
+- **Doubtful handwriting is asked about (2026-11-15; not seen on the phone yet).**
+  The reader's probabilities are averaged over the frames that called the cell
+  handwritten (`userVote`: the digit is the one with the highest average, not the
+  commonest reading) and travel in `Capture.userConfidence` / `userSecondGuess`. Below
+  **0.8** (`CheckSession.LOW_HAND_CONFIDENCE`) Check rings the user's digit and asks
+  "Did you write 7?", second choice dashed; picking a digit settles it. On 260 real
+  handwritten digits (18 misread): 0.8 asks about 21 (8%) and catches 10, the second
+  choice right for 7 of them; 0.9 asks about 41 for the same 10. The other 8 are
+  confident misreads (a flagged 1 read as 7).
+- **Still to do:** corner notes, crossed-out digits (book_pen_02 r4c1); typed entries
+  on screens (screen_filled_*: look printed, 0/61 found); thick handwriting next to
+  thin print (see `handwritten` below); phone timing of the handwriting step.
 - **Synthetic `handwritten` condition** (`synth.py`, appended last; MNIST digits redrawn
   thin in pencil grey / ballpoint dark via `make_handwritten.glyph`, a third of them
   wrong): 0% without the split, **35%** with it (Windows, --synth 20; the 14 earlier
@@ -526,8 +556,10 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
     GameStore.kt       the kept game in SharedPreferences, written after every change (Android side)
     Generator.kt       puzzles rated exactly as chosen (port of synth.random_puzzle + HintEngine) (pure Kotlin)
-    HintEngine.kt      hints as data (last empty cell, hidden/naked single, advanced fallback),
+    HintEngine.kt      hints as data (last empty cell, hidden/naked single, reveal fallback),
                        difficulty rating (pure Kotlin)
+    HintAdvanced.kt    pattern hints: pointing, claiming, naked / hidden pair, each one
+                       elimination plus the single it leaves (pure Kotlin)
     GameState.kt       Puzzle, BoardSettings, the board: entries, notes, undo, mistakes,
                        conflicts, hints used, time (pure Kotlin)
     Orientation.kt     corner order, quarter-turn choice, corner tracking, lock (pure Kotlin)
@@ -549,7 +581,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
-                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest
+                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest,
+                       HintAdvancedTest (resources/hints/real_puzzles.txt: the photos' puzzles), HintKeysTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
                        resources/hand/ from export_hand_cases.py;
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /

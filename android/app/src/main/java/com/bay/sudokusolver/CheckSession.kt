@@ -47,6 +47,15 @@ class CheckSession(
 
     fun isMine(i: Int) = i in mine
 
+    /**
+     * A digit the scan read as the user's handwriting, but not confidently: Check rings
+     * it and asks, with the reader's second choice dashed ("confidence before accusing":
+     * a misread entry on the board would look like the player's mistake). Settled once
+     * the user picks a digit for it.
+     */
+    fun mineUnsure(i: Int) = i in mine && i !in edits && capture.userEntries[i] != 0 &&
+        capture.userConfidence[i] < LOW_HAND_CONFIDENCE
+
     /** The printed digits as they stand now: what the puzzle is solved from. */
     val printed: IntArray by lazy { IntArray(81) { if (it in mine) 0 else value(it) } }
 
@@ -118,6 +127,7 @@ class CheckSession(
                 ?: solving.singleOrNull()
         }
         return when {
+            mineUnsure(i) -> capture.userSecondGuess[i].takeIf { it != 0 }
             i in mine -> null
             fix(i) != null -> fix(i)!!.from
             unsureReason(i) == UnsureReason.INK -> 0
@@ -142,7 +152,7 @@ class CheckSession(
         else -> CheckSession(capture, edits, mine - i)
     }
 
-    val unsureCount: Int get() = (0 until 81).count { mark(it) == CellMark.UNSURE }
+    val unsureCount: Int get() = (0 until 81).count { mark(it) == CellMark.UNSURE || mineUnsure(it) }
     val correctedCount: Int get() = (0 until 81).count { mark(it) == CellMark.CORRECTED }
     val changedCount: Int get() = edits.size
     val mineCount: Int get() = mine.size
@@ -180,5 +190,16 @@ class CheckSession(
          * raises confidence, so the phone should ring fewer cells than this test.
          */
         const val LOW_CONFIDENCE = 0.95f
+
+        /**
+         * Below this (the handwriting reader's averaged probability) a digit read as the
+         * user's is asked about. Measured 2026-11-15 on 260 real handwritten digits at
+         * 640 px (the owner's book 205, puzzle1's red pen 55; hand_digits.keras, single
+         * frames): 18 misread. 0.8 asks about 21 (8%) and catches 10 of the 18, with the
+         * second choice right for 7 of those; 0.9 asks about 41 and catches the same 10;
+         * 0.7 asks about 10 and catches 6. The other 8 misreads are confident ones (a
+         * flagged 1 read as 7): no threshold short of 0.99 finds them.
+         */
+        const val LOW_HAND_CONFIDENCE = 0.8f
     }
 }

@@ -520,6 +520,10 @@ private fun techniqueName(t: Technique) = when (t) {
     Technique.LAST_EMPTY_CELL -> "Last empty cell"
     Technique.HIDDEN_SINGLE -> "Hidden single"
     Technique.NAKED_SINGLE -> "Naked single"
+    Technique.POINTING -> "Pointing"
+    Technique.CLAIMING -> "Claiming"
+    Technique.NAKED_PAIR -> "Naked pair"
+    Technique.HIDDEN_PAIR -> "Hidden pair"
     Technique.ADVANCED -> "Advanced"
 }
 
@@ -733,10 +737,51 @@ private fun PHintNaked() = SudofolioTheme {
     PlayScreen(remember { nakedSingleGame() }, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 3)
 }
 
+/** puzzle3 where singles run out: a pointing step (it used to be the reveal fallback). */
+@Preview(name = "Play · pointing, Show me", widthDp = 390, heightDp = 844)
+@Composable
+private fun PHintPointing() = SudofolioTheme {
+    PlayScreen(designGame(stuck = true).hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 3)
+}
+
+@Preview(name = "Play · pointing, Technique", widthDp = 390, heightDp = 844)
+@Composable
+private fun PHintPointing2() = SudofolioTheme {
+    PlayScreen(designGame(stuck = true).hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 2)
+}
+
+/** [givens] played hint by hint up to the first hint that satisfies [stop]. */
+private fun playUntil(givens: String, stop: (Hint) -> Boolean): GameState {
+    val g0 = Solver.parse(givens)
+    var g = GameState(Puzzle(g0, Solver.solve(g0)[0]))
+    while (true) {
+        val h = (g.nextHint() as? HintResult.Step)?.hint ?: break
+        if (stop(h)) break
+        g = g.enter(h.target, h.digit)
+    }
+    return g.tick(252_000).hintOpened()
+}
+
+/** photos/screen_angle_ny_01: its first pair. */
+@Preview(name = "Play · a pair, Show me", widthDp = 390, heightDp = 844)
+@Composable
+private fun PHintPair() = SudofolioTheme {
+    val g = remember {
+        playUntil("090000000050709001002040030070600004000070308000100090940800000007000100001060700") {
+            it.technique == Technique.NAKED_PAIR || it.technique == Technique.HIDDEN_PAIR
+        }
+    }
+    PlayScreen(g, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 3)
+}
+
+/** photos/screen_angle_expert_01: patterns run out, the reveal fallback is still there. */
 @Preview(name = "Play · advanced fallback", widthDp = 390, heightDp = 844)
 @Composable
 private fun PHintAdvanced() = SudofolioTheme {
-    PlayScreen(designGame(stuck = true).hintOpened(), PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 1)
+    val g = remember {
+        playUntil("290000005043090200000270090000009020480000019070100000020068000006030480800000052") { it.technique == Technique.ADVANCED }
+    }
+    PlayScreen(g, PlayMode.HINTS, BoardSettings(), false, {}, {}, {}, {}, initialHintLevel = 1)
 }
 
 @Preview(name = "Show solution", widthDp = 390, heightDp = 844)

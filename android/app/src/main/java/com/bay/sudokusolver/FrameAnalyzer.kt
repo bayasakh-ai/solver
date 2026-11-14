@@ -298,6 +298,7 @@ class FrameAnalyzer(
             }
         }
         val user = IntArray(81)
+        val userProbs = arrayOfNulls<FloatArray>(81)
         val unsure = BooleanArray(81)
         val shaped = filled.filter { shapes?.get(it) != null }
         if (handClassifier != null && shapes != null && shaped.isNotEmpty()) {
@@ -314,18 +315,22 @@ class FrameAnalyzer(
             val written = (0 until 81).filter { user[it] != 0 }
             if (handReader != null && written.isNotEmpty()) {
                 val q = handReader.classify(written.map { cells[it]!! })
-                written.forEachIndexed { k, i -> user[i] = q[k].indices.maxBy { q[k][it] } + 1 }
+                written.forEachIndexed { k, i ->
+                    user[i] = q[k].indices.maxBy { q[k][it] } + 1
+                    userProbs[i] = q[k]
+                }
             }
         }
         handUnsure = unsure
-        tracker.add(grid, probs, user)
+        tracker.add(grid, probs, user, userProbs)
     }
 
     /** Solve when the vote produces a new stable reading; returns the scan state. */
     private fun updateSolution(isSharp: Boolean, gridShare: Double): ScanState {
         val consensus = tracker.consensus()
         if (consensus != null) {
-            val user = tracker.userEntries()
+            val vote = tracker.userVote()
+            val user = vote.entries
             val newReading = !consensus.first.contentEquals(solvedFrom)
             if (newReading) {
                 solved = SelfCorrect.solve(consensus.first, consensus.second)
@@ -334,7 +339,7 @@ class FrameAnalyzer(
             // the user's digits can settle after the printed ones: same solution, new hand-off
             if (newReading || !user.contentEquals(capturedUser)) {
                 capture = Capture.from(consensus.first, consensus.second, solved!!,
-                    ink?.unsure, ink?.removed?.count { it } ?: 0, user, handUnsure)
+                    ink?.unsure, ink?.removed?.count { it } ?: 0, user, handUnsure, vote.confidence, vote.second)
                 capturedUser = user
             }
         }

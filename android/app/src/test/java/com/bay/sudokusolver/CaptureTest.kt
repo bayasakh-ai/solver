@@ -96,6 +96,45 @@ class CaptureTest {
         assertArrayEquals(givens, tracker.consensus()!!.first)
     }
 
+    @Test fun doubtfulHandwritingIsAskedAboutNotGuessed() {
+        fun frame(vararg cells: Pair<Int, Int>) = IntArray(81).also { f -> cells.forEach { (i, d) -> f[i] = d } }
+        fun probs(i: Int, vararg p: Pair<Int, Float>) = arrayOfNulls<FloatArray>(81).also { a ->
+            a[i] = FloatArray(9).also { q -> p.forEach { (d, v) -> q[d - 1] = v } }
+        }
+        // r1c1: two frames read 7 weakly, one reads 1 strongly: the average says 1, not the count
+        val frames = listOf(frame(0 to 7), frame(0 to 7), frame(0 to 1))
+        val reader = listOf(probs(0, 7 to 0.5f, 1 to 0.45f), probs(0, 7 to 0.5f, 1 to 0.45f), probs(0, 1 to 0.95f, 7 to 0.03f))
+        val vote = userVote(frames, reader, needed = 3)
+        assertEquals(1, vote.entries[0])
+        assertEquals(7, vote.second[0])
+        assertEquals((0.45f + 0.45f + 0.95f) / 3, vote.confidence[0], 1e-6f)
+        // no reader: the commonest reading, and nothing to doubt it with
+        val plain = userVote(frames, listOf(null, null, null), needed = 3)
+        assertEquals(7, plain.entries[0])
+        assertEquals(1f, plain.confidence[0])
+        assertEquals(0, plain.second[0])
+
+        val solution = Solver.solve(givens)[0]
+        val user = IntArray(81).also { it[0] = 1; it[1] = 2 }
+        val conf = FloatArray(81) { 1f }.also { it[0] = 0.62f; it[1] = 0.97f }
+        val second = IntArray(81).also { it[0] = 7; it[1] = 3 }
+        val c = Capture.from(givens, probs(givens), SolveResult(givens, solution, emptyList()), null, 0, user, null, conf, second)
+        var s = CheckSession(c)
+        assertTrue(s.mineUnsure(0))
+        assertFalse(s.mineUnsure(1))            // confident: carried over without a question
+        assertEquals(CellMark.MINE, s.mark(0))  // still the user's, drawn in their hand
+        assertEquals(7, s.suggestion(0))        // the dashed key
+        assertEquals(null, s.suggestion(1))
+        val asked = s.unsureCount              // the helper's printed digits are below 0.95 too
+        // picking a digit settles it, and that digit goes to the board
+        s = s.edit(0, 7)
+        assertFalse(s.mineUnsure(0))
+        assertEquals(asked - 1, s.unsureCount)
+        assertEquals(7, (s.confirm() as CheckResult.Ready).start[0])
+        // a digit the user marks by hand is never doubted
+        assertFalse(CheckSession(c).setMine(2, true).mineUnsure(2))
+    }
+
     @Test fun noInkVerdictMeansNothingUnsure() {
         val c = Capture.from(givens, probs(givens), SolveResult(givens, null, emptyList()), null, 0)
         assertEquals(0, c.inkUnsure.count { it })

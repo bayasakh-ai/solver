@@ -8,7 +8,8 @@ package com.bay.sudokusolver
 /** Keeps the last [window] sharp readings; a cell is trusted when [needed] of them agree. */
 class PuzzleTracker(private val window: Int = 5, private val needed: Int = 3) {
 
-    private class Frame(val grid: IntArray, val probs: Array<FloatArray?>, val user: IntArray?)
+    private class Frame(val grid: IntArray, val probs: Array<FloatArray?>, val user: IntArray?,
+                        val userProbs: Array<FloatArray?>?)
 
     private val history = ArrayDeque<Frame>()
 
@@ -20,15 +21,19 @@ class PuzzleTracker(private val window: Int = 5, private val needed: Int = 3) {
     /**
      * grid: 81 printed digits (0 = empty); probs: the model's 9 probabilities for each
      * read cell. user: the digits this frame called handwritten (Hand.kt), 0 elsewhere:
-     * they are NOT in grid, the puzzle is solved from printed digits only.
+     * they are NOT in grid, the puzzle is solved from printed digits only. userProbs:
+     * the handwriting reader's 9 probabilities for those cells, when there is a reader.
      */
-    fun add(grid: IntArray, probs: Array<FloatArray?>, user: IntArray? = null) {
-        history.addLast(Frame(grid, probs, user))
+    fun add(grid: IntArray, probs: Array<FloatArray?>, user: IntArray? = null, userProbs: Array<FloatArray?>? = null) {
+        history.addLast(Frame(grid, probs, user, userProbs))
         if (history.size > window) history.removeFirst()
     }
 
     /** The user's handwritten digits over the same frames (see [userEntries] below). */
     fun userEntries(): IntArray = userEntries(history.map { it.user }, needed)
+
+    /** The same, with how sure the reader is and its second choice (see [userVote] below). */
+    fun userVote(): UserVote = userVote(history.map { it.user }, history.map { it.userProbs }, needed)
 
     /** Majority reading per cell with averaged probabilities, or null if not yet stable. */
     fun consensus(): Pair<IntArray, Array<FloatArray?>>? {
@@ -76,6 +81,42 @@ fun userEntries(frames: List<IntArray?>, needed: Int): IntArray {
         if (seen >= needed) out[i] = (1..9).maxBy { counts[it] }
     }
     return out
+}
+
+/**
+ * [entries]: the user's digits (0 elsewhere). [confidence]: the handwriting reader's
+ * probability for that digit, averaged over the frames; 1 where no reader ran (nothing
+ * to doubt with). [second]: its second choice, 0 without a reader.
+ */
+class UserVote(val entries: IntArray, val confidence: FloatArray, val second: IntArray)
+
+/**
+ * [userEntries] with the reader's probabilities: a cell counts when [needed] frames
+ * called it handwritten; with probabilities for it, the digit is the one with the
+ * highest AVERAGE probability over those frames (a frame that is sure outweighs two
+ * that are not), else the commonest reading.
+ */
+fun userVote(frames: List<IntArray?>, probs: List<Array<FloatArray?>?>, needed: Int): UserVote {
+    val entries = userEntries(frames, needed)
+    val confidence = FloatArray(81) { 1f }
+    val second = IntArray(81)
+    for (i in 0 until 81) {
+        if (entries[i] == 0) continue
+        val avg = FloatArray(9)
+        var n = 0
+        for (k in frames.indices) {
+            if ((frames[k]?.get(i) ?: 0) == 0) continue
+            val p = probs.getOrNull(k)?.get(i) ?: continue
+            for (d in 0 until 9) avg[d] += p[d]
+            n++
+        }
+        if (n == 0) continue
+        val order = (0 until 9).sortedByDescending { avg[it] }
+        entries[i] = order[0] + 1
+        confidence[i] = avg[order[0]] / n
+        second[i] = order[1] + 1
+    }
+    return UserVote(entries, confidence, second)
 }
 
 data class Fix(val cell: Int, val from: Int, val fromProb: Float, val to: Int, val toProb: Float)

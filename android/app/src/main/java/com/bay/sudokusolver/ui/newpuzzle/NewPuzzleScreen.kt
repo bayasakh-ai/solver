@@ -49,7 +49,7 @@ private fun blurb(d: Difficulty) = when (d) {
     Difficulty.EASY -> "Lots of givens. Each step: one place left in a box."
     Difficulty.MEDIUM -> "Look along rows and columns too."
     Difficulty.TRICKY -> "Some cells only show their digit once you count what they see."
-    Difficulty.HARD -> "Needs a step beyond singles. Hints can reveal a cell when you’re stuck."
+    Difficulty.HARD -> "Needs a step beyond singles: pointing or a pair. Hints explain each one."
 }
 
 /**

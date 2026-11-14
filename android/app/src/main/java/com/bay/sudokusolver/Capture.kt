@@ -37,6 +37,13 @@ class Capture(
      * the puzzle as read, Check rings them and offers Mark as mine.
      */
     val handUnsure: BooleanArray = BooleanArray(81),
+    /**
+     * How sure the handwriting reader is of each of [userEntries] (1 = nothing to doubt:
+     * no reader, or the user marked it) and its second choice (0 = none). Check asks
+     * about the doubtful ones instead of putting a guess on the board.
+     */
+    val userConfidence: FloatArray = FloatArray(81) { 1f },
+    val userSecondGuess: IntArray = IntArray(81),
 ) {
     val solved: Boolean get() = solution != null
     val corrected: Set<Int> get() = fixes.mapTo(HashSet()) { it.cell }
@@ -57,6 +64,8 @@ class Capture(
             inkIgnored: Int,
             userEntries: IntArray? = null,
             handUnsure: BooleanArray? = null,
+            userConfidence: FloatArray? = null,
+            userSecondGuess: IntArray? = null,
         ): Capture {
             require(read.size == 81 && probs.size == 81) { "need 81 cells" }
             val confidence = FloatArray(81)
@@ -79,6 +88,8 @@ class Capture(
                 solution = result.solution?.copyOf(),
                 userEntries = IntArray(81) { if (read[it] == 0) userEntries?.get(it) ?: 0 else 0 },
                 handUnsure = BooleanArray(81) { read[it] != 0 && handUnsure?.get(it) == true },
+                userConfidence = FloatArray(81) { if (read[it] == 0) userConfidence?.get(it) ?: 1f else 1f },
+                userSecondGuess = IntArray(81) { if (read[it] == 0) userSecondGuess?.get(it) ?: 0 else 0 },
             )
         }
     }

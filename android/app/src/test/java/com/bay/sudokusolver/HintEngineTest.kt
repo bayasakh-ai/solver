@@ -24,12 +24,35 @@ class HintEngineTest {
         assertEquals(Difficulty.HARD, HintEngine.rate(givens))
     }
 
-    @Test fun stuckBoardOffersTheAdvancedFallbackAtR1C7() {
-        val r = HintEngine.next(givens, entriesOf(stuckBoard), solution) as HintResult.Step
-        assertEquals(Technique.ADVANCED, r.hint.technique)
-        assertEquals(6, r.hint.target)          // r1c7
-        assertEquals(2, r.hint.digit)
-        assertEquals(listOf(2, 7), r.hint.candidates)
+    /** puzzle3 used to stop here with "reveal a cell"; a pointing step explains it now. */
+    @Test fun stuckBoardGetsAPointingHint() {
+        val h = (HintEngine.next(givens, entriesOf(stuckBoard), solution) as HintResult.Step).hint
+        assertEquals(Technique.POINTING, h.technique)
+        assertEquals(solution[h.target], h.digit)
+        assertEquals(0, stuckBoard[h.target])
+        assertEquals(UnitType.BOX, h.unit!!.type)
+        assertTrue(h.line!!.type != UnitType.BOX)
+        assertTrue(h.candidates.isEmpty())      // candidates are for the reveal fallback only
+    }
+
+    /** Longer chains are still not explained: the fallback offers the open cell with the fewest candidates. */
+    @Test fun whenPatternsRunOutTheFallbackOffersACell() {
+        val g = Solver.parse("290000005043090200000270090000009020480000019070100000020068000006030480800000052")
+        val sol = Solver.solve(g)[0]
+        val entries = IntArray(81)
+        while (true) {
+            val h = (HintEngine.next(g, entries, sol) as HintResult.Step).hint
+            if (h.technique == Technique.ADVANCED) {
+                val board = IntArray(81) { g[it] + entries[it] }
+                val open = (0 until 81).filter { board[it] == 0 }
+                assertEquals(open.minOf { Cells.candidates(board, it).size }, h.candidates.size)
+                assertEquals(Cells.candidates(board, h.target), h.candidates)
+                assertEquals(sol[h.target], h.digit)
+                assertTrue(h.pattern.isEmpty() && h.unit == null)
+                break
+            }
+            entries[h.target] = h.digit
+        }
     }
 
     @Test fun afterRevealingR1C7SinglesFinishThePuzzle() {
@@ -102,6 +125,6 @@ class HintEngineTest {
             entries = entries.copyOf().also { it[h.target] = h.digit }
         }
         val h = (HintEngine.next(givens, entries, solution) as HintResult.Step).hint
-        assertEquals(Technique.ADVANCED, h.technique)
+        assertEquals(Technique.POINTING, h.technique)
     }
 }
