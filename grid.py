@@ -387,18 +387,19 @@ def clean_cell(cell, out=DIGIT_SIZE):
 
 
 def cell_shape(bin_cell, gray_cell):
-    """(stroke, dark, height) of the digit in one cell, for hand.py, or None if empty.
+    """(stroke, dark, height, tallest) of the digit in one cell, for hand.py, or None if empty.
     Same crop and kept pieces as clean_cell. stroke: twice the mean depth of the deepest
     fifth of the ink (distance to the nearest paper pixel). dark: how far the ink (its
     25th percentile) is below the paper around it, as a share of the paper. height: the
-    digit's bounding box, px."""
+    digit's bounding box, px. tallest: the height of its tallest single piece, px (a
+    digit is one tall piece; pencil notes are several short ones)."""
     h, w = bin_cell.shape
     m = int(0.12 * h)
     inner = bin_cell[m:h - m, m:w - m]
     gray = gray_cell[m:h - m, m:w - m]
     n, labels, stats, cents = cv2.connectedComponentsWithStats(inner, connectivity=8)
     ih, iw = inner.shape
-    keep, largest = [], 0
+    keep, largest, tallest = [], 0, 0
     for i in range(1, n):
         area = stats[i, cv2.CC_STAT_AREA]
         cx, cy = cents[i]
@@ -408,6 +409,7 @@ def cell_shape(bin_cell, gray_cell):
             continue
         keep.append(i)
         largest = max(largest, area)
+        tallest = max(tallest, stats[i, cv2.CC_STAT_HEIGHT])
     if largest < 0.03 * ih * iw:
         return None
     mask = np.isin(labels, keep)
@@ -416,7 +418,8 @@ def cell_shape(bin_cell, gray_cell):
     deepest = np.sort(depth[mask])[-max(1, int(mask.sum()) // 5):]
     paper = float(np.median(gray[~mask]))
     ink = float(np.percentile(gray[mask], 25))
-    return (2 * float(deepest.mean()), (paper - ink) / max(paper, 1.0), float(ys.max() - ys.min() + 1))
+    return (2 * float(deepest.mean()), (paper - ink) / max(paper, 1.0), float(ys.max() - ys.min() + 1),
+            float(tallest))
 
 
 def cell_shapes(warped):

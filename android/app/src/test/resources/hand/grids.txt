@@ -1,7 +1,9 @@
-book_pen_01 1 54 2
-book_pencil_01 1 53 0
-book_pencil_03 1 10 2
-puzzle2 1 0 3
-screen_glare_sudokucom_01 1 0 1
-screen_filled_247_01 0 0 0
-synth_glare 1 0 1
+book_pen_01 1 54 2 0
+book_pen_02 1 49 1 0
+book_pencil_01 1 51 0 2
+book_pencil_03 1 10 2 0
+puzzle2 1 0 3 0
+screen_glare_sudokucom_01 1 0 1 0
+screen_filled_247_01 0 0 0 0
+synth_glare 1 0 1 0
+synth_notes 1 1 1 9

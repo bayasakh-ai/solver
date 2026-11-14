@@ -10,7 +10,17 @@ package com.bay.sudokusolver
  * shape as the hint data in design/screens/flow/Play.dc.html.
  */
 
-enum class Technique { LAST_EMPTY_CELL, HIDDEN_SINGLE, NAKED_SINGLE, ADVANCED }
+/**
+ * Easiest first. POINTING .. HIDDEN_PAIR (HintAdvanced.kt) are one elimination that
+ * leaves a single; ADVANCED is the fallback when even that finds nothing: offer to
+ * reveal a cell.
+ */
+enum class Technique {
+    LAST_EMPTY_CELL, HIDDEN_SINGLE, NAKED_SINGLE, POINTING, CLAIMING, NAKED_PAIR, HIDDEN_PAIR, ADVANCED;
+
+    /** Explained with a pattern and an elimination before the digit. */
+    val isPattern: Boolean get() = this == POINTING || this == CLAIMING || this == NAKED_PAIR || this == HIDDEN_PAIR
+}
 
 /** Show me draws a line from an eliminator along its row or column, ending at [to]. */
 data class Sweep(val from: Int, val along: SudokuUnit, val to: Int)
@@ -40,6 +50,18 @@ data class Hint(
     val reason: String,
     /** Level 3 (Show me): the animation's steps, in order. */
     val steps: List<String> = emptyList(),
+    /** Pattern techniques: the cells that form the pattern (the pair, the pointing cells) ... */
+    val pattern: List<Int> = emptyList(),
+    /** ... and the digit(s) they hold between them. [unit] is where the pattern lives. */
+    val patternDigits: List<Int> = emptyList(),
+    /** Where the pattern rules digits out (pointing: the row or column; claiming: the box; pairs: [unit]). */
+    val line: SudokuUnit? = null,
+    /** The cells that lose [removedDigits], as far as the answer needs them. */
+    val removed: List<Int> = emptyList(),
+    val removedDigits: List<Int> = emptyList(),
+    /** The single the elimination leaves: NAKED_SINGLE, or HIDDEN_SINGLE in [finishUnit] (then [crossedOut] = its other empty cells). */
+    val finish: Technique? = null,
+    val finishUnit: SudokuUnit? = null,
 ) {
     /** Cells the hint is about: everything outside is dimmed. */
     val focus: Set<Int>
@@ -48,8 +70,12 @@ data class Hint(
             if (technique == Technique.NAKED_SINGLE) {
                 addAll(Cells.rowOf(target).cells); addAll(Cells.colOf(target).cells); addAll(Cells.boxOf(target).cells)
             }
+            line?.let { addAll(it.cells) }
+            finishUnit?.let { addAll(it.cells) }
             add(target)
             addAll(eliminators)
+            addAll(pattern)
+            addAll(removed)
             for (s in sweeps) addAll(cellsBetween(s.from, s.to))
         }
 }
@@ -94,6 +120,7 @@ object HintEngine {
         if (open.isEmpty()) return if (wrong > 0) HintResult.Mistakes(wrong) else HintResult.Solved
         find(board, open)?.let { return HintResult.Step(it) }
         if (wrong > 0) return HintResult.Mistakes(wrong)
+        AdvancedHints.find(board, open)?.let { return HintResult.Step(it) }
         return HintResult.Step(advanced(board, open, solution))
     }
 
@@ -119,11 +146,26 @@ object HintEngine {
 
     fun rate(givens: IntArray): Difficulty = singles(givens).difficulty
 
+    /**
+     * Can every step be explained: singles, and where they run out a pattern hint
+     * (HintAdvanced.kt), with no "reveal a cell" fallback? The generator's Hard puzzles
+     * are built to pass this, so a puzzle the app made never leaves its own hints stuck.
+     */
+    fun explains(givens: IntArray): Boolean {
+        val board = givens.copyOf()
+        while (true) {
+            val empties = (0 until 81).filterTo(HashSet()) { board[it] == 0 }
+            if (empties.isEmpty()) return true
+            val h = find(board, empties) ?: AdvancedHints.find(board, empties) ?: return false
+            board[h.target] = h.digit
+        }
+    }
+
     private fun level(h: Hint) = when (h.technique) {
         Technique.LAST_EMPTY_CELL -> Difficulty.EASY
         Technique.HIDDEN_SINGLE -> if (h.unit?.type == UnitType.BOX) Difficulty.EASY else Difficulty.MEDIUM
         Technique.NAKED_SINGLE -> Difficulty.TRICKY
-        Technique.ADVANCED -> Difficulty.HARD
+        else -> Difficulty.HARD
     }
 
     // --- techniques ---------------------------------------------------------------
@@ -244,8 +286,8 @@ object HintEngine {
             Technique.ADVANCED, solution[target], target, unit = null,
             candidates = Cells.candidates(board, target),
             text = "This step needs an advanced technique.",
-            reason = "No single works anywhere right now. This app doesn’t explain pairs or pointing yet, " +
-                "but it can reveal a cell to get you moving.",
+            reason = "No single, pointing or pair step gets a digit right now. This app doesn’t explain " +
+                "longer chains yet, but it can reveal a cell to get you moving.",
         )
     }
 

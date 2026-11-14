@@ -3,13 +3,15 @@ HandParityTest (plain JVM, no phone) can check Hand.kt measures and decides like
 grid.cell_shape and hand.py.
 Writes android/app/src/test/resources/hand/:
   <case>.bin.gz  the binarized grid then the gray grid, 450x450 bytes each (gzip)
-  shapes.txt     `case r c stroke dark height` per cell that has a shape
+  shapes.txt     `case r c stroke dark height tallest` per cell that has a shape
   kinds.txt      `case r c P(handwritten) kind` per cell that was classified
-  grids.txt      `case reference(0/1) hand unsure` per case
+  grids.txt      `case reference(0/1) hand unsure notes` per case
+  edges.txt      `stroke dark height tallest P kind` against the reference (4.0, 0.6, 25.0)
 
 Cases (640 px frames like the phone): the owner's book in ballpoint and pencil, a blank
 newspaper puzzle, a glare-damaged screen (its r1c5 must stay UNSURE), a bad warp with no
-reference, a synthetic glare photo, and edge cases around every threshold.
+reference, a synthetic glare photo, a synthetic puzzle with pencil notes, the book page
+with a scribbled-out digit (book_pen_02 r4c1), and edge cases around every threshold.
 Re-run after changing hand.py or grid.cell_shape, then run the JVM tests."""
 import gzip
 import os
@@ -24,7 +26,7 @@ from evaluate import fit_frame
 from grid import binarize, cell_shapes
 
 OUT = os.path.join("android", "app", "src", "test", "resources", "hand")
-PHOTOS = ["book_pen_01", "book_pencil_01", "book_pencil_03", "puzzle2",
+PHOTOS = ["book_pen_01", "book_pen_02", "book_pencil_01", "book_pencil_03", "puzzle2",
           "screen_glare_sudokucom_01", "screen_filled_247_01"]
 
 
@@ -37,7 +39,9 @@ def main():
     images = [(n, fit_frame(cv2.imread(os.path.join("photos", n + ".jpg")), 640)) for n in PHOTOS]
     from make_digits import load_fonts
     from synth import make_sample
-    images.append(("synth_glare", make_sample("glare", load_fonts())[0]))
+    fonts = load_fonts()
+    images.append(("synth_glare", make_sample("glare", fonts)[0]))
+    images.append(("synth_notes", make_sample("notes", fonts)[0]))
 
     shapes_out, kinds_out, grids_out = [], [], []
     fmt = lambda x: repr(float(x))
@@ -57,17 +61,18 @@ def main():
         pos = sorted(res["kinds"])
         ref = hand.reference([hand.Shape(*shapes[r][c]) for r, c in pos], [probs[p] for p in pos])
         ks = list(res["kinds"].values())
-        grids_out.append(f"{name} {int(ref is not None)} {ks.count(hand.HAND)} {ks.count(hand.UNSURE)}")
+        grids_out.append(f"{name} {int(ref is not None)} {ks.count(hand.HAND)} {ks.count(hand.UNSURE)} {ks.count(hand.NOTE)}")
 
     # edge cases: one cell against the reference (4.0, 0.6, 25.0): `stroke dark height P kind`
-    ref = hand.Shape(4.0, 0.6, 25.0)
+    ref = hand.Shape(4.0, 0.6, 25.0, 25.0)
     edges = []
     for stroke in (0.84, 0.85, 0.9199, 0.92, 1.0):
         for dark in (0.5, 0.8799, 0.88, 1.0):
             for height in (0.87, 0.88, 1.0, 1.12, 1.13):
                 for p in (0.0, 0.0999, 0.1, 0.5, 0.8999, 0.9, 1.0):
-                    s = hand.Shape(stroke * ref.stroke, dark * ref.dark, height * ref.height)
-                    edges.append(f"{fmt(s.stroke)} {fmt(s.dark)} {fmt(s.height)} {fmt(p)} {hand.kind(s, ref, p)}")
+                    for tallest in (0.74, 0.75, 1.0):
+                        s = hand.Shape(stroke * ref.stroke, dark * ref.dark, height * ref.height, tallest * ref.height)
+                        edges.append(f"{fmt(s.stroke)} {fmt(s.dark)} {fmt(s.height)} {fmt(s.tallest)} {fmt(p)} {hand.kind(s, ref, p)}")
 
     for fname, lines in (("shapes.txt", shapes_out), ("kinds.txt", kinds_out), ("grids.txt", grids_out),
                          ("edges.txt", edges)):

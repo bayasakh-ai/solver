@@ -70,6 +70,34 @@ class HintKeysTest {
         assertEquals(0.40f, HintKeys.glowAt(Technique.HIDDEN_SINGLE), 1e-6f)
     }
 
+    @Test fun patternHintsShowThePatternThenTheEliminationThenTheDigit() {
+        val patterns = Technique.values().filter { it.isPattern }
+        assertEquals(4, patterns.size)
+        for (tech in patterns) {
+            var t = 0f
+            while (t <= 0.9f) {
+                val pattern = (0 until 3).map { HintKeys.patternIn(t, it, 3) }
+                val removed = (0 until 2).map { HintKeys.removeIn(t, it, 2) }
+                assertTrue("$tech t=$t", pattern.zipWithNext().all { (a, b) -> a >= b })
+                // nothing is struck out before the whole pattern is on the board
+                if (removed.any { it > 0f }) assertTrue("$tech t=$t", pattern.all { it == 1f })
+                if (HintKeys.lineIn(t) > 0f) assertTrue("$tech t=$t", pattern.all { it == 1f })
+                // the finish frame waits for the eliminations, the glow for the frame
+                if (HintKeys.finishIn(t) > 0f) assertTrue("$tech t=$t", removed.all { it == 1f })
+                if (HintKeys.glow(t, tech) > 0f) assertEquals("$tech t=$t", 1f, HintKeys.finishIn(t), 1e-4f)
+                t += 0.005f
+            }
+            assertEquals(0, HintKeys.step(0.10f, tech))
+            assertEquals(1, HintKeys.step(0.30f, tech))
+            assertEquals(2, HintKeys.step(0.60f, tech))
+            // level 2 and animations off: everything at once
+            assertEquals(1f, HintKeys.patternIn(STILL, 2, 3), 1e-6f)
+            assertEquals(1f, HintKeys.removeIn(STILL, 1, 2), 1e-6f)
+            assertEquals(1f, HintKeys.finishIn(STILL), 1e-6f)
+            assertEquals(1f, HintKeys.writeAlpha(STILL, tech), 1e-6f)
+        }
+    }
+
     @Test fun popOvershootsThenSettles() {
         assertEquals(0.6f, HintKeys.pop(0f), 1e-6f)
         assertEquals(1.18f, HintKeys.pop(0.5f), 1e-6f)

@@ -23,6 +23,14 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_DEBUG, value).apply()
 
     /**
+     * Zoom in on small puzzles (Zoom.kt): the camera hands over 1280x960 frames instead
+     * of 640x480. Off by default until its cost is timed on the phone.
+     */
+    var zoom: Boolean
+        get() = prefs.getBoolean(KEY_ZOOM, false)
+        set(value) = prefs.edit().putBoolean(KEY_ZOOM, value).apply()
+
+    /**
      * The welcome pages were finished once (or Not now was chosen). False on a fresh
      * install. Android's backup restores it on a new phone, where the camera isn't
      * allowed yet: the no-camera screen's Allow camera button covers that.
@@ -58,6 +66,7 @@ class SettingsStore(context: Context) {
     private companion object {
         const val KEY_PALETTE = "answer_palette"
         const val KEY_DEBUG = "debug_thumbnail"
+        const val KEY_ZOOM = "zoom_small_puzzles"
         const val KEY_WELCOME = "welcome_seen"
         const val KEY_MISTAKES = "board_show_mistakes"
         const val KEY_TIMER = "board_show_timer"

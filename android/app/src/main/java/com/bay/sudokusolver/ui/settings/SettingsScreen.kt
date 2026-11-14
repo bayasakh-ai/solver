@@ -63,6 +63,8 @@ fun SettingsScreen(
     board: BoardSettings,
     onPalette: (AnswerPalette) -> Unit,
     onDebug: (Boolean) -> Unit,
+    zoom: Boolean = false,
+    onZoom: (Boolean) -> Unit = {},
     onBoard: (BoardSettings) -> Unit,
     onWelcome: () -> Unit,
     onBack: () -> Unit,
@@ -129,6 +131,9 @@ fun SettingsScreen(
             }
 
             Text("Camera", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp))
+            ToggleRow("Zoom in on small puzzles", "Experimental. Reads a puzzle that is far away or small on the page " +
+                "by looking closer at the middle of the picture.", zoom, onZoom, Modifier.padding(horizontal = 20.dp))
+            HorizontalDivider(color = Classical.Ink.copy(alpha = 0.14f), modifier = Modifier.padding(horizontal = 20.dp))
             ToggleRow("Debug thumbnail", "Shows the flattened grid and frame stats over the camera.", debug, onDebug,
                 Modifier.padding(horizontal = 20.dp))
 

@@ -8,12 +8,18 @@ import kotlin.random.Random
  * difficulty: a hole that would make HintEngine rate the puzzle harder than asked is
  * filled back in. So the rating on Choose and Play is the one the player picked, by
  * construction, and HintEngine stays the only judge of difficulty. Pure Kotlin.
+ *
+ * Hard (2026-11-15): singles are not enough, but every stuck point has a pattern hint
+ * (pointing, claiming, a pair): HintEngine.explains. Before that Hard meant "anything
+ * singles can't solve", and dug to 23-26 givens those puzzles were far harder than a
+ * newspaper's: 45 of 60 still needed a cell revealed with pattern hints, against 1 of
+ * the 5 Hard puzzles among the scanned photos (HintAdvancedTest).
  */
 object Generator {
 
     /**
      * Digging stops at this many givens: an easy puzzle with 22 givens is legal but feels
-     * bare. Hard has no floor of its own; it needs few givens to need an advanced step.
+     * bare. Hard has no floor of its own: it stops digging where the hints would get stuck.
      */
     fun minGivens(d: Difficulty) = when (d) {
         Difficulty.EASY -> 36
@@ -48,8 +54,8 @@ object Generator {
             val keep = puzzle[i]
             puzzle[i] = 0
             val ok = Solver.solve(puzzle, limit = 2).size == 1 &&
-                // Hard: any rating is fine while digging; the finished puzzle is checked
-                (target == Difficulty.HARD || HintEngine.rate(puzzle) <= target)
+                // Hard: singles may run out, as long as a pattern hint always carries on
+                (if (target == Difficulty.HARD) HintEngine.explains(puzzle) else HintEngine.rate(puzzle) <= target)
             if (ok) givens-- else puzzle[i] = keep
         }
         return puzzle

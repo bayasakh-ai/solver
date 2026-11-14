@@ -33,6 +33,10 @@ import com.bay.sudokusolver.ui.theme.SudokuColors
  *                    ringed one by one in digit order, the ninth writes in
  *   last empty cell  the unit lights up, its eight digits are ticked off one by one,
  *                    the missing one writes in (sooner: there is less to show)
+ *   pointing, claiming, naked pair, hidden pair (Technique.isPattern)
+ *                    the pattern's cells are boxed with their candidate digits, the
+ *                    cells that lose a digit show it struck through, the unit with one
+ *                    place left is framed, then the digit writes in
  */
 
 /** Progress of [t] between [a] and [b], clamped to 0..1. */
@@ -59,7 +63,8 @@ object HintKeys {
     fun glowAt(tech: Technique) = when (tech) {
         Technique.LAST_EMPTY_CELL -> 0.30f
         Technique.NAKED_SINGLE -> 0.46f
-        else -> 0.40f
+        Technique.HIDDEN_SINGLE, Technique.ADVANCED -> 0.40f
+        else -> 0.46f // pattern techniques: pattern, elimination, then the digit
     }
     fun glow(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) =
         ramp(t, glowAt(tech), glowAt(tech) + 0.10f) * fadeOut(t)
@@ -71,6 +76,7 @@ object HintKeys {
     /** Which of the 3 step lines is lit (0-based). */
     fun step(t: Float, tech: Technique = Technique.HIDDEN_SINGLE) = when {
         tech == Technique.HIDDEN_SINGLE || tech == Technique.ADVANCED -> when { t <= 0.30f -> 0; t <= 0.50f -> 1; else -> 2 }
+        tech.isPattern -> when { t <= PATTERN_DONE -> 0; t <= glowAt(tech) -> 1; else -> 2 }
         t <= ONE_BY_ONE_FROM -> 0
         t <= glowAt(tech) -> 1
         else -> 2
@@ -95,6 +101,25 @@ object HintKeys {
 
     /** Row, column and box of a naked single fade in before the counting starts. */
     fun lightUp(t: Float) = ramp(t, 0f, ONE_BY_ONE_FROM)
+
+    // pattern techniques: the pattern's cells, then the cells that lose a digit, then the finish
+    const val PATTERN_FROM = 0.05f
+    const val PATTERN_DONE = 0.21f
+    const val REMOVE_FROM = 0.24f
+    const val REMOVE_DONE = 0.38f
+
+    private fun slot(t: Float, k: Int, n: Int, from: Float, to: Float): Float {
+        val w = (to - from) / n
+        return ramp(t, from + k * w, from + (k + 1) * w)
+    }
+    /** Progress 0..1 of pattern cell [k] of [n] being boxed. */
+    fun patternIn(t: Float, k: Int, n: Int) = slot(t, k, n, PATTERN_FROM, PATTERN_DONE)
+    /** Progress 0..1 of removed cell [k] of [n] getting its struck digit. */
+    fun removeIn(t: Float, k: Int, n: Int) = slot(t, k, n, REMOVE_FROM, REMOVE_DONE)
+    /** The line the pattern rules digits out of lights up as the removals start. */
+    fun lineIn(t: Float) = ramp(t, PATTERN_DONE, REMOVE_FROM)
+    /** The unit with one place left is framed (and its other cells crossed) just before the glow. */
+    fun finishIn(t: Float) = ramp(t, REMOVE_DONE, 0.46f)
 }
 
 fun DrawScope.drawHint(
@@ -175,6 +200,67 @@ fun DrawScope.drawHint(
         }
         glow(hint.target, HintKeys.glow(t, tech))
         if (level >= 3) write(hint.target, HintKeys.writeAlpha(t, tech), HintKeys.writeScale(t, tech))
+        return
+    }
+    if (tech.isPattern) {
+        val small = PlayerDigit.copy(fontSize = 10.sp, color = colors.printedDigit)
+        fun digits(ds: List<Int>, at: Offset, alpha: Float, struck: Boolean) {
+            val text = ds.joinToString(" ")
+            val layout = measurer.measure(text, small.copy(color = colors.printedDigit.copy(alpha = alpha)))
+            val tl = at - Offset(layout.size.width / 2f, layout.size.height / 2f)
+            drawText(layout, topLeft = tl)
+            if (struck) {
+                val pad = 2.dp.toPx()
+                val a = Offset(tl.x - pad, at.y + layout.size.height * 0.28f)
+                val b = Offset(tl.x + layout.size.width + pad, at.y - layout.size.height * 0.28f)
+                drawLine(halo.copy(alpha = halo.alpha * alpha), a, b, haloW, StrokeCap.Round)
+                drawLine(stroke.copy(alpha = alpha), a, b, w, StrokeCap.Round)
+            }
+        }
+        val fade = fadeOut(t)
+        // where the pattern rules digits out (pointing: the line; claiming: the box)
+        hint.line?.takeIf { it != hint.unit }?.let { u ->
+            val a = HintKeys.lineIn(t) * fade
+            val r = rectOf(u)
+            drawRect(colors.hintTintPaper.copy(alpha = colors.hintTintPaper.alpha * a), r.topLeft, r.size)
+            drawRect(stroke.copy(alpha = a * 0.6f), r.topLeft, r.size, style = Stroke(1.dp.toPx()))
+        }
+        // the pattern: its cells boxed one by one, with the digits they share
+        val up = Offset(0f, cell * 0.2f)
+        hint.pattern.forEachIndexed { k, i ->
+            val p = HintKeys.patternIn(t, k, hint.pattern.size)
+            val a = p * fade
+            if (a <= 0f) return@forEachIndexed
+            val inset = cell * (0.5f - 0.42f * HintKeys.pop(p))
+            val r = cellRect(i).deflate(inset)
+            drawRect(halo.copy(alpha = halo.alpha * a), r.topLeft, r.size, style = Stroke(haloW))
+            drawRect(stroke.copy(alpha = a), r.topLeft, r.size, style = Stroke(w))
+            digits(hint.patternDigits, if (i in hint.removed) center(i) - up else center(i), a, struck = false)
+        }
+        // the cells that lose a digit: shown struck through (fading as the answer writes over one)
+        val writing = if (level >= 3) HintKeys.writeAlpha(t, tech) else 0f
+        hint.removed.forEachIndexed { k, i ->
+            var a = HintKeys.removeIn(t, k, hint.removed.size) * fade
+            if (i == hint.target) a *= 1f - writing
+            if (a > 0f) digits(hint.removedDigits, if (i in hint.pattern) center(i) + up else center(i), a, struck = true)
+        }
+        // the finish: a hidden single's unit is framed and its other empty cells crossed
+        val fin = HintKeys.finishIn(t) * fade
+        if (fin > 0f) {
+            hint.finishUnit?.takeIf { it != hint.unit }?.let { u ->
+                val r = rectOf(u)
+                drawRect(halo.copy(alpha = halo.alpha * fin), r.topLeft, r.size, style = Stroke(haloW))
+                drawRect(stroke.copy(alpha = fin), r.topLeft, r.size, style = Stroke(w))
+            }
+            for (x in hint.crossedOut) {
+                val c = center(x); val h = 5.dp.toPx()
+                for ((p, q) in listOf(Offset(-h, -h) to Offset(h, h), Offset(h, -h) to Offset(-h, h))) {
+                    drawLine(stroke.copy(alpha = fin), c + p, c + q, 1.8.dp.toPx(), StrokeCap.Round)
+                }
+            }
+        }
+        glow(hint.target, HintKeys.glow(t, tech))
+        if (level >= 3) write(hint.target, writing, HintKeys.writeScale(t, tech))
         return
     }
     if (tech == Technique.LAST_EMPTY_CELL) {
