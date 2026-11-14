@@ -5,7 +5,12 @@ pencil are colour photos of a started puzzle: user digits in empty cells (about 
 third of them WRONG, so reading them as givens breaks the solve), some spilling into
 the next cell, plus small pencil notes in cell corners. The truth is still the printed
 puzzle and its solution, so they pass only if the user's ink is ignored.
-pencil is gray graphite: v1 ignores colour only, so it is expected to fail (v1.1)."""
+pencil is gray graphite in a script FONT as thick as the print: colour can't see it and
+neither can the shape rules (hand.py), so it is expected to fail.
+handwritten (last) is the same started puzzle with real handwriting shapes: MNIST digits
+redrawn thin in pencil grey or ballpoint dark (make_handwritten.glyph), gray only. It
+passes when hand.py moves them out of the puzzle. The shape model was trained on the
+same generator, so this checks the pipeline around it, not the model."""
 import random
 
 import cv2
@@ -16,8 +21,20 @@ from solver import solve
 
 CONDITIONS = ["clean", "tilt", "rotate", "shadow", "glare", "blur",
               "low_res", "jpeg", "dark_mode", "touching_lines", "pen_marks", "pencil",
-              "rotate_steep", "moire"]  # appended last: earlier conditions keep the same images per seed
-USER_INK = ("pen_marks", "pencil")  # colour conditions: a started puzzle
+              "rotate_steep", "moire",  # appended last: earlier conditions keep the same images per seed
+              "handwritten"]
+USER_INK = ("pen_marks", "pencil", "handwritten")  # colour conditions: a started puzzle
+_mnist = None
+
+
+def written_digit(d, cell):
+    """Alpha image of digit d as a thin handwritten entry (pencil / ballpoint width)."""
+    global _mnist
+    from make_handwritten import glyph, mnist_by_digit
+    if _mnist is None:
+        _mnist = mnist_by_digit()
+    pool = _mnist[d]
+    return glyph(pool[random.randrange(len(pool))], cell, stroke=(1.6, 3.0))
 
 
 # ---------- puzzle generation ----------
@@ -67,12 +84,16 @@ def render_board(puzzle, font_path, size=540):
     return np.array(img)
 
 
-def draw_user_ink(board, puzzle, solution, pencil):
-    """Gray board -> BGR board with the user's entries written over it."""
+def draw_user_ink(board, puzzle, solution, pencil, written=False):
+    """Gray board -> BGR board with the user's entries written over it. written: real
+    handwriting shapes (MNIST) in gray instead of a script font."""
     size = board.shape[0] - 1
     cell = size // 9
     layer = np.full(board.shape + (3,), 255, np.uint8)
-    if pencil:
+    if written:
+        g = random.choice([random.randint(95, 140), random.randint(40, 80)])  # pencil / ballpoint
+        color, pencil = (g, g, g), True
+    elif pencil:
         g = random.randint(95, 140)
         color, thick = (g, g, g + 5), random.choice([1, 2])
     else:
@@ -86,6 +107,15 @@ def draw_user_ink(board, puzzle, solution, pencil):
             d = solution[r][c]
             if random.random() < 0.33:
                 d = random.choice([x for x in range(1, 10) if x != d])
+            if written:
+                a = written_digit(d, cell).astype(np.float32)[..., None] / 255
+                h, w = a.shape[:2]
+                x = int(c * cell + (cell - w) / 2 + random.uniform(-0.1, 0.1) * cell)
+                y = int(r * cell + (cell - h) / 2 + random.uniform(-0.1, 0.1) * cell)
+                x, y = min(max(x, 0), size - w), min(max(y, 0), size - h)
+                patch = layer[y:y + h, x:x + w].astype(np.float32)
+                layer[y:y + h, x:x + w] = (patch * (1 - a) + np.array(color, np.float32) * a).astype(np.uint8)
+                continue
             scale = random.uniform(1.3, 1.8) * cell / 60
             dx = random.uniform(-0.15, 0.15) * cell
             if random.random() < 0.15:  # sloppy stroke crossing into the next cell
@@ -188,7 +218,8 @@ def make_sample(cond, fonts):
     puzzle, solution = random_puzzle(random.randint(24, 32))
     board = render_board(puzzle, random.choice(fonts))
     if cond in USER_INK:
-        board = draw_user_ink(board, puzzle, solution, pencil=(cond == "pencil"))
+        board = draw_user_ink(board, puzzle, solution, pencil=(cond == "pencil"),
+                              written=(cond == "handwritten"))
     tilt = 0.12 if cond == "tilt" else 0.04
     angle = random.uniform(-25, 25) if cond == "rotate" else random.uniform(-3, 3)
     if cond == "rotate_steep":  # phone held at 45-90 degrees to the page, either way

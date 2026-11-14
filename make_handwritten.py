@@ -27,16 +27,18 @@ def stroke_width(mask):
     return 2 * float(np.percentile(dist[padded > 0], 90))
 
 
-def render(digit28):
-    """One MNIST digit (28x28, white on black) -> a 28x28 cleaned cell or None."""
+def glyph(digit28, cell=CELL, stroke=(1.6, 4.2)):
+    """One MNIST digit (28x28, white on black) redrawn as a written entry for a cell of
+    `cell` px: an alpha image (0-255) of random height with the stroke thinned to
+    `stroke` px (given for a 50 px cell). Also used by synth.py's handwritten condition."""
     ys, xs = np.nonzero(digit28 > 40)
     glyph = digit28[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     # big first (smooth strokes), then thin to a pen / pencil width, then down to size
     big = cv2.resize(glyph, None, fx=8, fy=8, interpolation=cv2.INTER_CUBIC)
     mask = (big > 110).astype(np.uint8)
-    height = random.randint(int(CELL * 0.36), int(CELL * 0.78))   # written size varies a lot
+    height = random.randint(int(cell * 0.36), int(cell * 0.78))   # written size varies a lot
     scale = height / mask.shape[0]
-    want = random.uniform(1.6, 4.2) / scale                        # final stroke 1.6-4.2 px
+    want = random.uniform(*stroke) * cell / CELL / scale           # final stroke 1.6-4.2 px
     have = stroke_width(mask)
     if have > want + 2:
         k = int((have - want) / 2)
@@ -45,7 +47,20 @@ def render(digit28):
             mask = thin
     stretch = random.uniform(0.8, 1.25)
     w = max(3, int(mask.shape[1] * scale * stretch))
-    small = cv2.resize(mask * 255, (min(w, CELL - 6), height), interpolation=cv2.INTER_AREA)
+    return cv2.resize(mask * 255, (min(w, cell - 6), height), interpolation=cv2.INTER_AREA)
+
+
+def mnist_by_digit():
+    """{digit 1-9: array of 28x28 MNIST images}. Downloaded once by Keras."""
+    import tensorflow as tf
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x, labels = np.concatenate([x_train, x_test]), np.concatenate([y_train, y_test])
+    return {d: x[labels == d] for d in range(1, 10)}
+
+
+def render(digit28):
+    """One MNIST digit (28x28, white on black) -> a 28x28 cleaned cell or None."""
+    small = glyph(digit28)
     h, w = small.shape
 
     paper = random.randint(170, 255)
@@ -82,12 +97,10 @@ def main():
     args = ap.parse_args()
     random.seed(args.seed)
     np.random.seed(args.seed)
-    import tensorflow as tf
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    x, labels = np.concatenate([x_train, x_test]), np.concatenate([y_train, y_test])
+    pools = mnist_by_digit()
     X, y = [], []
     for d in range(1, 10):
-        pool = x[labels == d]
+        pool = pools[d]
         made = 0
         while made < args.per_digit:
             img = render(pool[random.randrange(len(pool))])

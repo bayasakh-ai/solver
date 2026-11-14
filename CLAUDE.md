@@ -424,7 +424,14 @@ from print by colour or darkness (see above), so the signal is **shape**.
   draws answers over handwritten cells too (as it already did over ignored pen).
   - **Not measured: time on the phone.** Desktop JVM: `Hand.cellShapes` 2.3 ms per
     frame (14 ms before histograms replaced sorting), plus two more model runs of 81,
-    on sharp frames only. Check with the debug stats / `PipelineTimingTest`.
+    on sharp frames only. `PipelineTimingTest` now logs it ("printed/handwritten ...
+    ms"); push the book photos too.
+  - **Size sweep (14 photos at 640, grid at 100 / 75 / 55% of that, sharp frames only,
+    Python):** printed called handwritten 0/386, 0/257, 0/91. Handwriting found
+    199/205, 181/205, 71/89 (the rest unsure: ringed, kept in the puzzle) and read
+    right 192, 169, 51. So a small grid loses handwriting to "unsure" and misreads
+    more of it, but never moves print out. Gaussian blur sigma >= 1 made every frame
+    fail the sharpness gate, so blurred frames are not read at all.
   - **Phone checks:** the book in pencil and in ballpoint (entries arrive on Check as
     yours, printed digits stay, puzzle solves); a blank puzzle (nothing marked as
     yours, no extra coral rings); glare on print (rings at most, never "yours"); thick
@@ -440,7 +447,17 @@ from print by colour or darkness (see above), so the signal is **shape**.
 - **Still to do:** phone test (above); corner notes, crossed-out digits (book_pen_02
   r4c1); low-confidence handwritten readings ("Is this a 4 or a 9?" before judging,
   v1.1); typed entries on screens (screen_filled_*: look printed, 0/61 found); a
-  synthetic condition with real handwriting shapes.
+  thick handwriting next to thin print (see `handwritten` below).
+- **Synthetic `handwritten` condition** (`synth.py`, appended last; MNIST digits redrawn
+  thin in pencil grey / ballpoint dark via `make_handwritten.glyph`, a third of them
+  wrong): 0% without the split, **35%** with it (Windows, --synth 20; the 14 earlier
+  conditions identical, 86% over 300). Over 30 more images: printed kept 833/839
+  (6 unsure, 0 moved), written digits 404 moved / 372 unsure / 7 printed. The unsure
+  ones are pale with a sure shape model but as thick as a thin printed FONT (307);
+  one wrong digit left in the puzzle makes it unsolvable, hence 35%. Accepting
+  "pale + sure model" as handwriting moved glare-damaged print out (numbers in the
+  `hand.py` docstring), so it is not done. The shape model was trained on the same
+  generator: this condition checks the pipeline around it, not the model.
 
 ---
 
@@ -459,7 +476,7 @@ from print by colour or darkness (see above), so the signal is **shape**.
   train_hand_digits.py reader for handwritten digits -> hand_digits.keras + hand_digits.tflite
   diagnose.py          confusion matrix, worst fonts, mistakes.png, --prune
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
-  synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
+  synth.py             synthetic puzzle photos under 15 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest

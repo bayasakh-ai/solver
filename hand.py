@@ -44,6 +44,15 @@ the owner's book in ballpoint and pencil, screens; synthetic = evaluate.py --syn
   same height as the print).
 The thresholds were chosen on those same cells (two writers): not a held-out result.
 
+Tried and NOT added: "pale and the shape model is sure (P >= 0.9) -> HAND, even when the
+stroke is as thick as the print". It would catch handwriting next to a thin printed font
+(synthetic `handwritten` condition: 372 of 783 written digits are UNSURE, 307 of them
+exactly this case), but glare-damaged PRINT is pale with a sure model too: it moved 5
+printed digits out (book_pen_01 r9c6, screen_glare_sudokucom r1c5, 3 synthetic). Only
+dark < 0.8 & P >= 0.97 & height >= 0.7 gave 0, with a synthetic glare cell at P 0.96:
+three thresholds fitted to these cells, a margin of 0.01, and no real photo of thick
+handwriting to gain from it. UNSURE (ringed, Check asks) stays the answer there.
+
 The background colour behind a digit (books that shade their givens) is NOT used: in
 gray it overlaps (book_pen_01: printed 0.76-1.11, handwritten 0.65-1.15 of the printed
 median) and other books shade whole boxes instead (book_01).
