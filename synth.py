@@ -10,7 +10,12 @@ neither can the shape rules (hand.py), so it is expected to fail.
 handwritten (last) is the same started puzzle with real handwriting shapes: MNIST digits
 redrawn thin in pencil grey or ballpoint dark (make_handwritten.glyph), gray only. It
 passes when hand.py moves them out of the puzzle. The shape model was trained on the
-same generator, so this checks the pipeline around it, not the model."""
+same generator, so this checks the pipeline around it, not the model.
+notes (last) is a puzzle nobody has answered yet but has pencilled candidates into:
+small handwritten digits (a fifth to a third of the cell high) in about half of the
+empty cells, at keypad positions, in a row along the top, or loose, the centre
+included. It passes when no note is read as a digit of the puzzle.
+LAST records what the last sample's user wrote, for measurements."""
 import random
 
 import cv2
@@ -22,19 +27,62 @@ from solver import solve
 CONDITIONS = ["clean", "tilt", "rotate", "shadow", "glare", "blur",
               "low_res", "jpeg", "dark_mode", "touching_lines", "pen_marks", "pencil",
               "rotate_steep", "moire",  # appended last: earlier conditions keep the same images per seed
-              "handwritten"]
-USER_INK = ("pen_marks", "pencil", "handwritten")  # colour conditions: a started puzzle
+              "handwritten", "notes"]
+USER_INK = ("pen_marks", "pencil", "handwritten", "notes")  # colour conditions: a started puzzle
 _mnist = None
+LAST = {"user": {}, "notes": {}}  # (r, c) -> digit / [digits] of the last make_sample
 
 
-def written_digit(d, cell):
-    """Alpha image of digit d as a thin handwritten entry (pencil / ballpoint width)."""
+def written_digit(d, cell, height=None):
+    """Alpha image of digit d as a thin handwritten entry (pencil / ballpoint width), or
+    as a pencil note of the given height (px)."""
     global _mnist
     from make_handwritten import glyph, mnist_by_digit
     if _mnist is None:
         _mnist = mnist_by_digit()
     pool = _mnist[d]
+    if height is not None:
+        return glyph(pool[random.randrange(len(pool))], cell, stroke=(1.0, 1.7), height=height)
     return glyph(pool[random.randrange(len(pool))], cell, stroke=(1.6, 3.0))
+
+
+def blend(layer, alpha, x, y, color):
+    """Write an alpha glyph onto the ink layer with its top-left at (x, y), clipped."""
+    h, w = alpha.shape
+    size = layer.shape[0]
+    x, y = min(max(x, 0), size - w), min(max(y, 0), size - h)
+    a = alpha.astype(np.float32)[..., None] / 255
+    patch = layer[y:y + h, x:x + w].astype(np.float32)
+    layer[y:y + h, x:x + w] = (patch * (1 - a) + np.array(color, np.float32) * a).astype(np.uint8)
+
+
+def draw_notes(board, puzzle):
+    """Gray board -> BGR board with pencil candidates in about half of the empty cells."""
+    size = board.shape[0] - 1
+    cell = size // 9
+    layer = np.full(board.shape + (3,), 255, np.uint8)
+    g = random.randint(95, 150)
+    LAST["user"], LAST["notes"] = {}, {}
+    for r in range(9):
+        for c in range(9):
+            if puzzle[r][c] or random.random() < 0.5:
+                continue
+            digits = sorted(random.sample(range(1, 10), random.randint(1, 4)))
+            LAST["notes"][(r, c)] = digits
+            style = random.choice(["keypad", "keypad", "row", "loose"])
+            for k, d in enumerate(digits):
+                a = written_digit(d, cell, height=random.randint(int(cell * 0.2), int(cell * 0.34)))
+                h, w = a.shape
+                if style == "keypad":      # digit d sits where it does on a phone keypad
+                    cx, cy = ((d - 1) % 3 + 0.5) / 3, ((d - 1) // 3 + 0.5) / 3
+                elif style == "row":       # side by side along the top
+                    cx, cy = (k + 0.7) / (len(digits) + 0.4), 0.24
+                else:                      # anywhere, the middle included
+                    cx, cy = random.uniform(0.2, 0.8), random.uniform(0.2, 0.8)
+                cx += random.uniform(-0.05, 0.05)
+                cy += random.uniform(-0.05, 0.05)
+                blend(layer, a, int(c * cell + cx * cell - w / 2), int(r * cell + cy * cell - h / 2), (g, g, g))
+    return np.minimum(cv2.cvtColor(board, cv2.COLOR_GRAY2BGR), layer)
 
 
 # ---------- puzzle generation ----------
@@ -100,6 +148,7 @@ def draw_user_ink(board, puzzle, solution, pencil, written=False):
         color = random.choice([(35, 35, 200), (180, 70, 25), (150, 40, 40)])  # red / blue pens
         thick = random.choice([2, 3])
     empty = [(r, c) for r in range(9) for c in range(9) if not puzzle[r][c]]
+    LAST["user"], LAST["notes"] = {}, {}
     random.shuffle(empty)
     n_user = random.randint(len(empty) // 3, 2 * len(empty) // 3)
     for k, (r, c) in enumerate(empty):
@@ -107,6 +156,7 @@ def draw_user_ink(board, puzzle, solution, pencil, written=False):
             d = solution[r][c]
             if random.random() < 0.33:
                 d = random.choice([x for x in range(1, 10) if x != d])
+            LAST["user"][(r, c)] = d
             if written:
                 a = written_digit(d, cell).astype(np.float32)[..., None] / 255
                 h, w = a.shape[:2]
@@ -124,6 +174,7 @@ def draw_user_ink(board, puzzle, solution, pencil, written=False):
             cv2.putText(layer, str(d), org, cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, scale, color, thick, cv2.LINE_AA)
         elif random.random() < 0.5:  # candidate notes in the corners of an empty cell
             for d in random.sample(range(1, 10), random.randint(1, 3)):
+                LAST["notes"].setdefault((r, c), []).append(d)
                 qx, qy = random.choice([(0.08, 0.32), (0.66, 0.32), (0.08, 0.92), (0.66, 0.92)])
                 org = (int(c * cell + qx * cell), int(r * cell + qy * cell))
                 cv2.putText(layer, str(d), org, cv2.FONT_HERSHEY_SIMPLEX, 0.4 * cell / 60,
@@ -217,7 +268,9 @@ def apply_condition(img, cond):
 def make_sample(cond, fonts):
     puzzle, solution = random_puzzle(random.randint(24, 32))
     board = render_board(puzzle, random.choice(fonts))
-    if cond in USER_INK:
+    if cond == "notes":
+        board = draw_notes(board, puzzle)
+    elif cond in USER_INK:
         board = draw_user_ink(board, puzzle, solution, pencil=(cond == "pencil"),
                               written=(cond == "handwritten"))
     tilt = 0.12 if cond == "tilt" else 0.04

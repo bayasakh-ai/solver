@@ -30,6 +30,23 @@ on handwriting (P >= 0.9) -> UNSURE: a thin printed font filled in with a thick 
 gives no signs, and there the shape model is the only signal.
 UNSURE = kept in the puzzle as read, the Check screen asks; never silently moved.
 
+NOTE = a pencilled candidate, not an answer (CLAUDE.md: "ignore pencil notes"): a cell
+that would be HAND but whose tallest single piece is under 0.75 x the print's height.
+The cell is read as empty: not part of the puzzle, not the user's entry. Measured
+2026-11-15 on synth.py's `notes` condition (small handwritten digits at keypad
+positions, in a row along the top, or loose; 40 images) against real handwriting:
+  before: 52% of note cells were read as a digit, and 87% of those were carried to the
+          board as the user's answers (478 of 550), 13% left in the puzzle as UNSURE
+  tallest piece / print height: notes median 0.60 (p95 1.07: stacked notes merge into
+          one tall piece), real handwriting p1 0.79, p5 0.90, printed p1 0.86
+  < 0.72 catches 385 of the 478, < 0.78 catches 415; both lose 2 of 201 real
+          handwritten digits (they are then just not carried over). 0.75 sits between.
+  Extra small pieces off-centre (57% of notes, 1% of handwriting) would catch 13-22
+          more but also fire on 12 of 852 real printed digits' cells, so it is not used.
+UNSURE cells are never called notes: 1 of 11 real UNSURE printed digits is that short
+(glare ate half of it), and dropping a given silently is worse than a ring on a note.
+No real photo with pencil notes yet: the note numbers are synthetic.
+
 Measured 2026-11-14 (640 px frames; real = 37 photos with a found grid: newspaper,
 the owner's book in ballpoint and pencil, screens; synthetic = evaluate.py --synth 20):
                               printed -> HAND   printed UNSURE   handwritten -> HAND
@@ -60,14 +77,15 @@ median) and other books shade whole boxes instead (book_01).
 Mirrored by Hand.kt (HandParityTest, fixtures from export_hand_cases.py)."""
 from collections import namedtuple
 
-Shape = namedtuple("Shape", "stroke dark height")
+Shape = namedtuple("Shape", "stroke dark height tallest")
 
-PRINTED, HAND, UNSURE = "printed", "hand", "unsure"
+PRINTED, HAND, UNSURE, NOTE = "printed", "hand", "unsure", "note"
 
 STROKE = 0.92          # thin: stroke below this share of the printed reference
 NEAR_STROKE = 0.85     # thin, but from this share on the shape model must agree
 DARK = 0.88            # pale: darkness below this share of the printed reference
 HEIGHT = 0.12          # odd: height more than this share away from the reference
+NOTE_HEIGHT = 0.75     # a handwritten cell whose tallest piece is below this share: a note
 SURE_PRINTED = 0.1     # shape model P(handwritten) below this: a reference cell
 SURE_HAND = 0.9        # shape model P(handwritten) from this: it insists on handwriting
 MIN_REFERENCE = 5      # fewer sure-printed cells than this: no reference, no split
@@ -90,7 +108,7 @@ def reference(shapes, probs):
     if len(sure) < MIN_REFERENCE:
         return None
     return Shape(_median([s.stroke for s in sure]), _median([s.dark for s in sure]),
-                 _median([s.height for s in sure]))
+                 _median([s.height for s in sure]), _median([s.tallest for s in sure]))
 
 
 def kind(shape, ref, prob):
@@ -102,7 +120,7 @@ def kind(shape, ref, prob):
             return UNSURE
         if shape.stroke >= NEAR_STROKE * ref.stroke and prob < SURE_HAND:
             return UNSURE
-        return HAND
+        return NOTE if shape.tallest < NOTE_HEIGHT * ref.height else HAND
     if thin + pale + odd >= 2:
         return UNSURE
     return UNSURE if prob >= SURE_HAND else PRINTED
@@ -118,6 +136,6 @@ def classify(shapes, probs):
     if ref is None:
         return [PRINTED] * len(shapes)
     kinds = [kind(s, ref, p) for s, p in zip(shapes, probs)]
-    if sum(k != HAND for k in kinds) < MIN_PRINTED_CELLS:
+    if sum(k not in (HAND, NOTE) for k in kinds) < MIN_PRINTED_CELLS:
         return [PRINTED] * len(shapes)
     return kinds

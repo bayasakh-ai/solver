@@ -27,6 +27,7 @@ class HandParityTest {
         "printed" -> HandKind.PRINTED
         "hand" -> HandKind.HAND
         "unsure" -> HandKind.UNSURE
+        "note" -> HandKind.NOTE
         else -> error("unknown kind $s")
     }
 
@@ -52,7 +53,7 @@ class HandParityTest {
                 val g = got[i]
                 if (w == null && g == null) continue
                 if (w == null || g == null) { bad.add("$name r${i / 9}c${i % 9}: Python $w, Kotlin $g"); continue }
-                if (abs(g.stroke - w[0]) > 1e-4 || abs(g.dark - w[1]) > 1e-9 || g.height != w[2]) {
+                if (abs(g.stroke - w[0]) > 1e-4 || abs(g.dark - w[1]) > 1e-9 || g.height != w[2] || g.tallest != w[3]) {
                     bad.add("$name r${i / 9}c${i % 9}: Python $w, Kotlin $g")
                 }
             }
@@ -77,6 +78,7 @@ class HandParityTest {
             assertEquals("$name reference", f[1] == "1", Hand.reference(s, probs) != null)
             assertEquals("$name handwritten", f[2].toInt(), kinds.count { it == HandKind.HAND })
             assertEquals("$name unsure", f[3].toInt(), kinds.count { it == HandKind.UNSURE })
+            assertEquals("$name notes", f[4].toInt(), kinds.count { it == HandKind.NOTE })
         }
         assertTrue("Kotlin and Python disagree:\n" + bad.joinToString("\n"), bad.isEmpty())
     }
@@ -84,10 +86,11 @@ class HandParityTest {
     @Test fun edgesMatchPython() {
         val ref = CellShape(4.0, 0.6, 25.0)
         val all = lines("edges.txt")
-        assertTrue(all.size >= 700)
+        assertTrue(all.size >= 2100)
+        assertTrue(all.any { it[5] == "note" })
         val bad = all.mapNotNull { f ->
-            val kind = Hand.kind(CellShape(f[0].toDouble(), f[1].toDouble(), f[2].toDouble()), ref, f[3].toDouble())
-            if (kind == kindOf(f[4])) null else "${f.joinToString(" ")}: Kotlin $kind"
+            val kind = Hand.kind(CellShape(f[0].toDouble(), f[1].toDouble(), f[2].toDouble(), f[3].toDouble()), ref, f[4].toDouble())
+            if (kind == kindOf(f[5])) null else "${f.joinToString(" ")}: Kotlin $kind"
         }
         assertTrue("Kotlin and Python disagree:\n" + bad.joinToString("\n"), bad.isEmpty())
     }
@@ -96,10 +99,23 @@ class HandParityTest {
     @Test fun bookHandwritingIsFoundAndPrintIsKept() {
         val grids = lines("grids.txt").associate { it[0] to it }
         assertEquals("54", grids.getValue("book_pen_01")[2])
-        assertEquals("53", grids.getValue("book_pencil_01")[2])
+        assertEquals("51", grids.getValue("book_pencil_01")[2])  // of 53: two short ones are taken for notes
         assertEquals("0", grids.getValue("puzzle2")[2])               // blank newspaper: nothing moved
         assertEquals("0", grids.getValue("screen_glare_sudokucom_01")[2])
         assertEquals("0", grids.getValue("screen_filled_247_01")[1])  // bad warp: no reference
+    }
+
+    /** Pencilled candidates are not answers; a scribbled-out digit is asked about, not accepted. */
+    @Test fun notesAreSkippedAndTheCrossedOutDigitIsAsked() {
+        val grids = lines("grids.txt").associate { it[0] to it }
+        val notes = grids.getValue("synth_notes")
+        assertTrue("notes found: ${notes[4]}", notes[4].toInt() >= 5)
+        assertTrue("notes carried as answers: ${notes[2]}", notes[2].toInt() < notes[4].toInt())
+        // no note on a blank puzzle
+        assertEquals("0", grids.getValue("puzzle2")[4])
+        // book_pen_02 r4c1: a digit scribbled out with a 2 written beside it
+        val crossed = lines("kinds.txt").single { it[0] == "book_pen_02" && it[1] == "3" && it[2] == "0" }
+        assertEquals("unsure", crossed[4])
     }
 
     @Test fun rules() {
@@ -119,6 +135,13 @@ class HandParityTest {
         assertTrue(Hand.classify(emptyList(), emptyList()).isEmpty())
         // an empty cell has no shape
         assertNull(Hand.cellShape(BooleanArray(38 * 38), IntArray(38 * 38) { 200 }, 38))
+        // a short piece among the handwriting is a pencilled note: neither puzzle nor entry
+        val note = CellShape(2.4, 0.3, 26.0, tallest = 12.0)
+        val mixed = Hand.classify(shapes + note, probs + 0.97)
+        assertEquals(HandKind.NOTE, mixed.last())
+        assertTrue(mixed.dropLast(1).none { it == HandKind.NOTE })
+        // print is never a note, whatever its height
+        assertEquals(HandKind.PRINTED, Hand.kind(CellShape(4.0, 0.6, 25.0, 12.0), print, 0.01))
     }
 
     private companion object {

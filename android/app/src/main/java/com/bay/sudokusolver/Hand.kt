@@ -25,21 +25,27 @@ import kotlin.math.min
  * UNSURE; no signs but a model that insists on handwriting -> UNSURE. UNSURE cells stay
  * in the puzzle as read and the Check screen asks. The measurements behind every number
  * are in the hand.py docstring.
+ *
+ * NOTE = a pencilled candidate, not an answer: a cell that would be HAND but whose
+ * tallest single piece is under 0.75 x the print's height. It is read as empty: not
+ * part of the puzzle, not the user's entry.
  */
-enum class HandKind { PRINTED, HAND, UNSURE }
+enum class HandKind { PRINTED, HAND, UNSURE, NOTE }
 
 /**
  * stroke: twice the mean depth of the deepest fifth of the ink (px). dark: how far the
  * ink (its 25th percentile) is below the paper around it, as a share of the paper.
- * height: the digit's bounding box (px).
+ * height: the digit's bounding box (px). tallest: the height of its tallest single
+ * piece (px): a digit is one tall piece, pencil notes are several short ones.
  */
-data class CellShape(val stroke: Double, val dark: Double, val height: Double)
+data class CellShape(val stroke: Double, val dark: Double, val height: Double, val tallest: Double = height)
 
 object Hand {
     const val STROKE = 0.92        // thin: stroke below this share of the printed reference
     const val NEAR_STROKE = 0.85   // thin, but from this share on the shape model must agree
     const val DARK = 0.88          // pale: darkness below this share of the printed reference
     const val HEIGHT = 0.12        // odd: height more than this share away from the reference
+    const val NOTE_HEIGHT = 0.75   // a handwritten cell whose tallest piece is below this share: a note
     const val SURE_PRINTED = 0.1   // shape model P(handwritten) below this: a reference cell
     const val SURE_HAND = 0.9      // shape model P(handwritten) from this: it insists on handwriting
     const val MIN_REFERENCE = 5    // fewer sure-printed cells than this: no reference, no split
@@ -59,7 +65,8 @@ object Hand {
     fun reference(shapes: List<CellShape>, probs: List<Double>): CellShape? {
         val sure = shapes.filterIndexed { i, _ -> probs[i] < SURE_PRINTED }
         if (sure.size < MIN_REFERENCE) return null
-        return CellShape(median(sure.map { it.stroke }), median(sure.map { it.dark }), median(sure.map { it.height }))
+        return CellShape(median(sure.map { it.stroke }), median(sure.map { it.dark }), median(sure.map { it.height }),
+            median(sure.map { it.tallest }))
     }
 
     fun kind(shape: CellShape, ref: CellShape, prob: Double): HandKind {
@@ -69,7 +76,7 @@ object Hand {
         if (thin && pale) {
             if (prob < SURE_PRINTED && !odd) return HandKind.UNSURE
             if (shape.stroke >= NEAR_STROKE * ref.stroke && prob < SURE_HAND) return HandKind.UNSURE
-            return HandKind.HAND
+            return if (shape.tallest < NOTE_HEIGHT * ref.height) HandKind.NOTE else HandKind.HAND
         }
         if ((if (thin) 1 else 0) + (if (pale) 1 else 0) + (if (odd) 1 else 0) >= 2) return HandKind.UNSURE
         return if (prob >= SURE_HAND) HandKind.UNSURE else HandKind.PRINTED
@@ -84,7 +91,7 @@ object Hand {
         if (shapes.isEmpty()) return emptyList()
         val ref = reference(shapes, probs) ?: return List(shapes.size) { HandKind.PRINTED }
         val kinds = shapes.indices.map { kind(shapes[it], ref, probs[it]) }
-        if (kinds.count { it != HandKind.HAND } < MIN_PRINTED_CELLS) return List(shapes.size) { HandKind.PRINTED }
+        if (kinds.count { it != HandKind.HAND && it != HandKind.NOTE } < MIN_PRINTED_CELLS) return List(shapes.size) { HandKind.PRINTED }
         return kinds
     }
 
@@ -124,6 +131,7 @@ object Hand {
         val kept = BooleanArray(total / 2 + 2) // pieces are numbered from 1
         var pieces = 0
         var largest = 0
+        var tallest = 0
         var any = false
         for (start in 0 until total) {
             if (!ink[start] || label[start] != 0) continue
@@ -134,11 +142,15 @@ object Hand {
             var area = 0
             var sx = 0L
             var sy = 0L
+            var top0 = side
+            var bottom = -1
             while (top > 0) {
                 val p = stack[--top]
                 val px = p % side
                 val py = p / side
                 area++; sx += px; sy += py
+                if (py < top0) top0 = py
+                if (py > bottom) bottom = py
                 for (dy in -1..1) for (dx in -1..1) {
                     val x = px + dx
                     val y = py + dy
@@ -153,6 +165,7 @@ object Hand {
             if (abs(cx - side / 2.0) > side * 0.35 || abs(cy - side / 2.0) > side * 0.35) continue
             kept[pieces] = true
             largest = max(largest, area)
+            tallest = max(tallest, bottom - top0 + 1)
             any = true
         }
         if (!any || largest < 0.03 * total) return null
@@ -194,7 +207,7 @@ object Hand {
         val low = nth(inkHist, lo)
         val high = nth(inkHist, min(lo + 1, inkCount - 1))
         val inkY = low + (high - low) * (pos - lo)
-        return CellShape(stroke, (paper - inkY) / max(paper, 1.0), (y1 - y0 + 1).toDouble())
+        return CellShape(stroke, (paper - inkY) / max(paper, 1.0), (y1 - y0 + 1).toDouble(), tallest.toDouble())
     }
 
     /** The value at index [k] of the sorted pixels a histogram stands for. */

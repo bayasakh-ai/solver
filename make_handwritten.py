@@ -27,16 +27,18 @@ def stroke_width(mask):
     return 2 * float(np.percentile(dist[padded > 0], 90))
 
 
-def glyph(digit28, cell=CELL, stroke=(1.6, 4.2)):
+def glyph(digit28, cell=CELL, stroke=(1.6, 4.2), height=None):
     """One MNIST digit (28x28, white on black) redrawn as a written entry for a cell of
     `cell` px: an alpha image (0-255) of random height with the stroke thinned to
-    `stroke` px (given for a 50 px cell). Also used by synth.py's handwritten condition."""
+    `stroke` px (given for a 50 px cell). Also used by synth.py's handwritten condition,
+    and with a fixed small `height` (px) for its pencil notes."""
     ys, xs = np.nonzero(digit28 > 40)
     glyph = digit28[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     # big first (smooth strokes), then thin to a pen / pencil width, then down to size
     big = cv2.resize(glyph, None, fx=8, fy=8, interpolation=cv2.INTER_CUBIC)
     mask = (big > 110).astype(np.uint8)
-    height = random.randint(int(cell * 0.36), int(cell * 0.78))   # written size varies a lot
+    if height is None:
+        height = random.randint(int(cell * 0.36), int(cell * 0.78))   # written size varies a lot
     scale = height / mask.shape[0]
     want = random.uniform(*stroke) * cell / CELL / scale           # final stroke 1.6-4.2 px
     have = stroke_width(mask)

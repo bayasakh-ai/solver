@@ -221,6 +221,9 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
         if k == hand.HAND:
             user[r][c], read[r][c] = written.get((r, c), read[r][c]), 0
             del probs[(r, c)]
+        elif k == hand.NOTE:  # a pencilled candidate: the cell is empty
+            read[r][c] = 0
+            del probs[(r, c)]
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
               "ink": ink, "backgrounds": backgrounds, "screen": screen, "user": user, "kinds": kinds,

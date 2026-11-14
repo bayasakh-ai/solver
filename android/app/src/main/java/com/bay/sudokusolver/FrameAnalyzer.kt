@@ -308,6 +308,7 @@ class FrameAnalyzer(
                 when (kinds[k]) {
                     HandKind.HAND -> { user[i] = grid[i]; grid[i] = 0; probs[i] = null }
                     HandKind.UNSURE -> unsure[i] = true
+                    HandKind.NOTE -> { grid[i] = 0; probs[i] = null } // a pencilled candidate: the cell is empty
                     HandKind.PRINTED -> {}
                 }
             }
