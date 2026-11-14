@@ -504,7 +504,27 @@ from print by colour or darkness (see above), so the signal is **shape**.
   2 beside it). It comes out UNSURE (thin but dark; ink share 0.18 against <= 0.15 for
   the page's other handwriting), i.e. ringed and asked about, which is what the rule
   wants; `HandParityTest` pins it. No rule was built on one example.
-- **Still to do:** typed entries on screens (screen_filled_*: look printed, 0/61
+- **Check my progress (2026-11-15, `ProgressChecker.kt`, `ui/progress/`,
+  `Route.Progress`; not in the design files, not seen on the phone yet).** Choose
+  offers it when the page has the user's digits. Count first ("2 digits don't fit" /
+  "All 22 fit so far"), *Show me where* marks them with the coral inset frame, *Carry
+  on on the phone* opens the board with the entries. Two kinds of digit are **not
+  judged**, ringed and counted apart ("couldn't read for sure"):
+  - the reader's confidence is under 0.8 and the user didn't settle it on Check;
+  - the reading differs from the solution but the reader gives the solution's digit
+    >= 0.1% (`ProgressChecker.PLAUSIBLE`): the writing could be the right digit.
+  The second rule exists because of a measurement: on the owner's three one-solution
+  book pages (157 handwritten digits, **none wrong**, single frames at 640) confidence
+  alone told every page "1 digit doesn't fit" (3 confident misreads). With it: 0 false
+  accusations, one more unread digit per page (15 of 154 carried digits not judged).
+  On 260 real handwritten digits it leaves 2 of the 8 confident misreads; by simulation
+  it still reports ~90% of real mistakes (0.01 would report 95% but leave 5 of 8).
+  A digit the user picked on Check is their word: always judged. **No real page with
+  mistakes yet**: the recall number is simulated. `Capture.userProbs` carries the
+  reader's averaged probabilities; `CheckResult.Ready.couldBe` the plausible digits.
+- **Still to do:** a page with real mistakes on it for Check my progress; hints from
+  where I am on paper already work once the board is open (it starts with the
+  entries); typed entries on screens (screen_filled_*: look printed, 0/61
   found); thick handwriting next to thin print (see `handwritten` below); phone timing
   of the handwriting step; a real photo with pencil notes.
 - **Synthetic `handwritten` condition** (`synth.py`, appended last; MNIST digits redrawn
@@ -569,7 +589,9 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ScanState.kt       Searching / Reading / HoldSteady / Solved / NeedsReview (pure Kotlin)
     Capture.kt         hand-off from the scan to Check: read vs fixed digits, confidence,
                        second guess, unsure ink, pen count, solution (pure Kotlin)
-    Route.kt           Route (Camera / Settings / Welcome / Check / Choose / Play) + NavStack, camera always root (pure Kotlin)
+    Route.kt           Route (Camera / Settings / Welcome / Check / Choose / Progress / Play) + NavStack, camera always root (pure Kotlin)
+    ProgressChecker.kt Check my progress: the user's digits against the solution, count first,
+                       doubtful readings not judged (pure Kotlin)
     Welcome.kt         welcome pages (which exist, what the last button does), CameraAsk (pure Kotlin)
     Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
@@ -588,7 +610,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        ScanChrome (status chip, docked bar, Play/Freeze/Reset/flash), previews
     ui/board/          shared SudokuGrid, flow header, outlined buttons
     ui/check/          CheckScreen (Reading/Photo, fix sheet), GridPhoto (flattened colour still, OpenCV)
-    ui/choose/         ChooseScreen (difficulty, three ways to play)
+    ui/choose/         ChooseScreen (difficulty, three ways to play, Check my progress)
+    ui/progress/       ProgressScreen (the count, Show me where, Carry on on the phone)
     ui/newpuzzle/      NewPuzzleScreen (Play a puzzle: pick a difficulty, Carry on)
     ui/play/           PlayScreen (board, keypad, hint sheet, Show solution), HintOverlay (hint marks
                        + Show me keyframes)
@@ -602,7 +625,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
                        GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest,
                        HintAdvancedTest (resources/hints/real_puzzles.txt: the photos' puzzles), HintKeysTest,
-                       ZoomTest
+                       ZoomTest, ProgressCheckerTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
                        resources/hand/ from export_hand_cases.py;
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /
@@ -616,9 +639,8 @@ Package: `com.bay.sudokusolver`. Screen locked to portrait.
 Dependencies: CameraX 1.6.2, OpenCV `org.opencv:opencv:4.12.0`, LiteRT
 `com.google.ai.edge.litert:litert:1.4.0` (classic `org.tensorflow.lite.Interpreter` API).
 
-Planned pure-logic file (no Android imports): `ProgressChecker.kt` (compare the user's
-handwritten digits to the solution, confidence rules; v1.1). `HintEngine.kt` and
-`GameState.kt` exist since Stage 3.
+`ProgressChecker.kt` (compare the user's handwritten digits to the solution, confidence
+rules) exists since 2026-11-15; `HintEngine.kt` and `GameState.kt` since Stage 3.
 
 Viewing a screen without a camera: the debug build includes Compose's PreviewActivity,
 `adb shell am start -n com.bay.sudokusolver/androidx.compose.ui.tooling.PreviewActivity

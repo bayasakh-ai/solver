@@ -353,7 +353,7 @@ class FrameAnalyzer(
             // the user's digits can settle after the printed ones: same solution, new hand-off
             if (newReading || !user.contentEquals(capturedUser)) {
                 capture = Capture.from(consensus.first, consensus.second, solved!!,
-                    ink?.unsure, ink?.removed?.count { it } ?: 0, user, handUnsure, vote.confidence, vote.second)
+                    ink?.unsure, ink?.removed?.count { it } ?: 0, user, handUnsure, vote.confidence, vote.second, vote.probs)
                 capturedUser = user
             }
         }

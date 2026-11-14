@@ -86,9 +86,12 @@ fun userEntries(frames: List<IntArray?>, needed: Int): IntArray {
 /**
  * [entries]: the user's digits (0 elsewhere). [confidence]: the handwriting reader's
  * probability for that digit, averaged over the frames; 1 where no reader ran (nothing
- * to doubt with). [second]: its second choice, 0 without a reader.
+ * to doubt with). [second]: its second choice, 0 without a reader. [probs]: the reader's
+ * nine averaged probabilities per cell (null without a reader): what else the writing
+ * could be, for Check my progress.
  */
-class UserVote(val entries: IntArray, val confidence: FloatArray, val second: IntArray)
+class UserVote(val entries: IntArray, val confidence: FloatArray, val second: IntArray,
+               val probs: Array<FloatArray?> = arrayOfNulls(81))
 
 /**
  * [userEntries] with the reader's probabilities: a cell counts when [needed] frames
@@ -100,6 +103,7 @@ fun userVote(frames: List<IntArray?>, probs: List<Array<FloatArray?>?>, needed: 
     val entries = userEntries(frames, needed)
     val confidence = FloatArray(81) { 1f }
     val second = IntArray(81)
+    val averaged = arrayOfNulls<FloatArray>(81)
     for (i in 0 until 81) {
         if (entries[i] == 0) continue
         val avg = FloatArray(9)
@@ -115,8 +119,9 @@ fun userVote(frames: List<IntArray?>, probs: List<Array<FloatArray?>?>, needed: 
         entries[i] = order[0] + 1
         confidence[i] = avg[order[0]] / n
         second[i] = order[1] + 1
+        averaged[i] = FloatArray(9) { avg[it] / n }
     }
-    return UserVote(entries, confidence, second)
+    return UserVote(entries, confidence, second, averaged)
 }
 
 data class Fix(val cell: Int, val from: Int, val fromProb: Float, val to: Int, val toProb: Float)

@@ -50,6 +50,7 @@ import com.bay.sudokusolver.ui.check.CheckScreen
 import com.bay.sudokusolver.ui.check.GridPhoto
 import com.bay.sudokusolver.ui.choose.ChooseScreen
 import com.bay.sudokusolver.ui.play.PlayScreen
+import com.bay.sudokusolver.ui.progress.ProgressScreen
 import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
@@ -231,7 +232,10 @@ class MainActivity : ComponentActivity() {
                         is Route.Choose -> ChooseScreen(route.puzzle,
                             resumable = game?.let { it.puzzle == route.puzzle && it.canUndo } == true,
                             onPlay = { mode -> play(route.puzzle, mode, route.start) }, onBack = ::goBack, onCamera = ::backToCamera,
-                            yours = route.start.count { it != 0 })
+                            yours = route.start.count { it != 0 },
+                            onProgress = { nav = nav.open(Route.Progress(route.puzzle, route.start, route.doubtful, route.couldBe)) })
+                        is Route.Progress -> ProgressScreen(route.puzzle, route.entries, route.doubtful, route.couldBe,
+                            onPlay = { play(route.puzzle, PlayMode.HINTS, route.entries) }, onBack = ::goBack)
                         is Route.Play -> PlayScreen(
                             game = game?.takeIf { it.puzzle == route.puzzle } ?: GameState(route.puzzle),
                             mode = route.mode, settings = board, running = inFront,
@@ -299,7 +303,7 @@ class MainActivity : ComponentActivity() {
     /** Looks right: on to Choose when the fixed grid is a puzzle; otherwise Check says why. */
     private fun confirmReading(): CheckResult {
         val r = checkSession?.confirm() ?: return CheckResult.TooFew
-        if (r is CheckResult.Ready) nav = nav.open(Route.Choose(r.puzzle, r.start))
+        if (r is CheckResult.Ready) nav = nav.open(Route.Choose(r.puzzle, r.start, r.doubtful, r.couldBe))
         return r
     }
 
