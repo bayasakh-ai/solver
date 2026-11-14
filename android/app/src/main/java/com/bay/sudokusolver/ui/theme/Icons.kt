@@ -39,6 +39,7 @@ object LucideIcons {
     val Move = icon("move", "M12 2v20", "m15 19-3 3-3-3", "m19 9 3 3-3 3", "M2 12h20", "m5 9-3 3 3 3", "m9 5 3-3 3 3")
     val Check = icon("check", "M20 6 9 17l-5-5")
     val AlertCircle = icon("alert-circle", "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20", "M12 8v4", "M12 16h.01")
+    val Info = icon("info", "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20", "M12 16v-4", "M12 8h.01")
     val Pause = icon("pause", "M6 4h4v16H6z", "M14 4h4v16h-4z")
     val Play = icon("play", "M6 3l14 9-14 9z")
     val Reset = icon("rotate-ccw", "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5")

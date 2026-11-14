@@ -559,8 +559,16 @@ the printed reading. inspect_photo.py reads both.
   - **Small grids at 640x480 can't be read below ~6% of the frame** (synthetic sweep,
     found/solved of 10: 10% 10/10, 6% 10/9, 4% 6/2, 3% 1/0). 1280x960 reads to 3%
     (10/10). Hence "Move closer" (`ScanState.MOVE_CLOSER_SHARE` = 0.06): advice, reading
-    carries on. Whether 1280x960 or find-at-640/read-at-1280 fits the 5 ms budget is not
-    measured yet (PipelineTimingTest, phone disconnected).
+    carries on. **Timed on the phone** (PipelineTimingTest, Galaxy A35, 24 screen photos,
+    2026-11-12; median / p90):
+    | mode | grid found | find | warp+cells+model |
+    |---|---|---|---|
+    | 640x480 | 22/24 | 5.2 / 23.2 ms | 21.9 / 23.9 ms |
+    | 1280x960 | 23/24 | 34.1 / 106.2 ms | 29.1 / 31.8 ms |
+    | hybrid (find 640, read 1280) | 22/24 | 5.3 / 18.7 ms | 25.6 / 29.6 ms |
+    Finding at 1280 is ~6.5x over the 5 ms budget; the hybrid keeps finding at 640 cost
+    and adds ~3.7 ms per read (reads run on sharp frames only). The hybrid is the
+    affordable way to read small grids; it needs the descreen step ported first.
   - **Moire at full resolution breaks the dark-mode vote**: empty screen cells get
     enough contrast to vote at random (screen_web 36/34, sudokucom 30/46 the wrong way).
     At 640 the frame's area downscale averages it out (dark votes <= 7 on every screen
