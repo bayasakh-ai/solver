@@ -48,7 +48,7 @@ The background colour behind a digit (books that shade their givens) is NOT used
 gray it overlaps (book_pen_01: printed 0.76-1.11, handwritten 0.65-1.15 of the printed
 median) and other books shade whole boxes instead (book_01).
 
-Mirrored by Hand.kt (to be ported)."""
+Mirrored by Hand.kt (HandParityTest, fixtures from export_hand_cases.py)."""
 from collections import namedtuple
 
 Shape = namedtuple("Shape", "stroke dark height")

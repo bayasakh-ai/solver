@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
     private var hasFlash by mutableStateOf(false)
     private lateinit var analysisExecutor: ExecutorService
     private lateinit var classifier: DigitClassifier
+    private lateinit var handClassifier: DigitClassifier // printed or handwritten? (Hand.kt)
+    private lateinit var handReader: DigitClassifier     // which digit the user wrote
     private var analyzer: FrameAnalyzer? = null
     private lateinit var settings: SettingsStore
     private var palette by mutableStateOf(AnswerPalette.DEFAULT)
@@ -136,6 +138,8 @@ class MainActivity : ComponentActivity() {
         debug = settings.debug
         board = settings.board
         classifier = DigitClassifier(this)
+        handClassifier = DigitClassifier(this, "hand.tflite", outputs = 1)
+        handReader = DigitClassifier(this, "hand_digits.tflite")
         // a game kept from before (swiped away, phone restarted, process killed): the
         // camera bar offers Continue. If Android killed the process with the board open,
         // reopen the board itself.
@@ -458,7 +462,7 @@ class MainActivity : ComponentActivity() {
                 .setResolutionSelector(analysisSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            val frameAnalyzer = FrameAnalyzer(classifier) { r ->
+            val frameAnalyzer = FrameAnalyzer(classifier, handClassifier, handReader) { r ->
                 runOnUiThread { if (frozen == null) result = r } // frozen: keep the answers as they were
             }
             frameAnalyzer.palette = palette
@@ -481,7 +485,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        analysisExecutor.execute { classifier.close() } // runs after the last frame finishes
+        analysisExecutor.execute { classifier.close(); handClassifier.close(); handReader.close() } // runs after the last frame finishes
         analysisExecutor.shutdown()
     }
 }

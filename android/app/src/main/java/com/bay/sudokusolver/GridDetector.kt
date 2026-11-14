@@ -383,6 +383,20 @@ object GridDetector {
     }
 
     /**
+     * Stroke, darkness and height of the digit in each of the 81 cells of the flattened,
+     * dark-on-light grid (null = empty), for the printed / handwritten split. Same as
+     * grid.cell_shapes; the measuring itself is pure Kotlin (Hand.cellShapes).
+     */
+    fun cellShapes(warped: Mat): Array<CellShape?> {
+        val th = binarize(warped)
+        val n = WARP_SIZE * WARP_SIZE
+        val bin = ByteArray(n).also { th.get(0, 0, it) }
+        th.release()
+        val gray = ByteArray(n).also { warped.get(0, 0, it) }
+        return Hand.cellShapes(bin, gray, WARP_SIZE)
+    }
+
+    /**
      * Measures every ink piece of one cell (same crop and components as cleanCell) and
      * erases the USER pieces from [bin] in place. Same as grid.cell_pieces.
      * Chroma = how far the piece's colour is from any neutral ink (InkClassifier.neutralDistance).

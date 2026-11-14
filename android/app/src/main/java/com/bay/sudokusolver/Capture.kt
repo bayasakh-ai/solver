@@ -27,10 +27,16 @@ class Capture(
     /**
      * Digits the user wrote (0 elsewhere), kept apart from the printed [digits]: Check
      * starts "Mark as mine" from these and hands them to the board as the player's
-     * entries. The scanner leaves it empty for now: coloured pen is removed before
-     * reading and pencil/black pen look like print (v1.1's handwriting model fills it).
+     * entries. The scanner fills it with the digits it called handwritten (Hand.kt:
+     * pencil, ballpoint), read as they are and never corrected. Coloured pen is removed
+     * before reading (InkClassifier), so it is not here.
      */
     val userEntries: IntArray = IntArray(81),
+    /**
+     * Printed-looking digits that might be handwriting (Hand.kt UNSURE): they stay in
+     * the puzzle as read, Check rings them and offers Mark as mine.
+     */
+    val handUnsure: BooleanArray = BooleanArray(81),
 ) {
     val solved: Boolean get() = solution != null
     val corrected: Set<Int> get() = fixes.mapTo(HashSet()) { it.cell }
@@ -40,6 +46,8 @@ class Capture(
         /**
          * [read] / [probs]: the consensus PuzzleTracker settled on; [result]: SelfCorrect's
          * answer for it; [inkUnsure] / [inkIgnored]: from the last frame that was read.
+         * [userEntries]: the handwritten digits the frames agree on (not in [read]).
+         * A cell can't be both: where the vote settled on a printed digit, that wins.
          */
         fun from(
             read: IntArray,
@@ -47,6 +55,8 @@ class Capture(
             result: SolveResult,
             inkUnsure: BooleanArray?,
             inkIgnored: Int,
+            userEntries: IntArray? = null,
+            handUnsure: BooleanArray? = null,
         ): Capture {
             require(read.size == 81 && probs.size == 81) { "need 81 cells" }
             val confidence = FloatArray(81)
@@ -67,6 +77,8 @@ class Capture(
                 inkUnsure = inkUnsure?.copyOf() ?: BooleanArray(81),
                 inkIgnored = inkIgnored,
                 solution = result.solution?.copyOf(),
+                userEntries = IntArray(81) { if (read[it] == 0) userEntries?.get(it) ?: 0 else 0 },
+                handUnsure = BooleanArray(81) { read[it] != 0 && handUnsure?.get(it) == true },
             )
         }
     }

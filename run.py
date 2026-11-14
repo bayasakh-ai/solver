@@ -43,19 +43,47 @@ def hand_model():
     return _hand_model or None
 
 
+_hand_reader = None
+
+
+def hand_reader():
+    """The reader for handwritten digits (train_hand_digits.py), loaded once; None if
+    absent: handwritten digits are then read by the print model."""
+    global _hand_reader
+    if _hand_reader is None:
+        import os
+        import tensorflow as tf
+        _hand_reader = (tf.keras.models.load_model("hand_digits.keras")
+                        if os.path.exists("hand_digits.keras") else False)
+    return _hand_reader or None
+
+
+def read_hand(cells, kinds):
+    """{(r, c): digit} for the cells called handwritten, read by the handwriting reader.
+    Empty without the reader."""
+    pos = [p for p, k in kinds.items() if k == hand.HAND]
+    reader = hand_reader()
+    if not pos or reader is None:
+        return {}
+    out = reader(np.array([cells[r][c] for r, c in pos], "float32")[..., None] / 255.0,
+                 training=False).numpy()
+    return {p: int(np.argmax(o)) + 1 for p, o in zip(pos, out)}
+
+
 def split_hand(cells, warped):
-    """{(r, c): hand.PRINTED / HAND / UNSURE} for the filled cells, or {} when switched
-    off or the shape model is missing. Decision rules in hand.py."""
+    """({(r, c): hand.PRINTED / HAND / UNSURE}, {(r, c): P(handwritten)}) for the filled
+    cells, or ({}, {}) when switched off or the shape model is missing. Decision rules
+    in hand.py."""
     model = hand_model() if HAND else None
     shapes = cell_shapes(warped) if model is not None else None
     pos = [(r, c) for r in range(9) for c in range(9)
            if cells[r][c] is not None and shapes is not None and shapes[r][c] is not None]
     if not pos:
-        return {}
+        return {}, {}
     probs = model(np.array([cells[r][c] for r, c in pos], "float32")[..., None] / 255.0,
                   training=False).numpy()[:, 0]
     kinds = hand.classify([hand.Shape(*shapes[r][c]) for r, c in pos], [float(p) for p in probs])
-    return dict(zip(pos, kinds))
+    return dict(zip(pos, kinds)), dict(zip(pos, (float(p) for p in probs)))
 
 
 def options_for(p, k=3):
@@ -183,17 +211,20 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     cells, ink = extract_cells(warped, chroma_planes(img, corners))
     read, probs = read_digits(cells, model)
     # handwritten digits (pencil, black pen) leave the puzzle: it is solved from printed
-    # digits only. They are kept as the player's entries ("user"), read as they are and
-    # never corrected. Unsure cells stay in the puzzle; Check asks about them.
-    kinds = split_hand(cells, warped)
+    # digits only. They are kept as the player's entries ("user"), read by the
+    # handwriting reader as they are and never corrected. Unsure cells stay in the
+    # puzzle; Check asks about them.
+    kinds, hand_probs = split_hand(cells, warped)
+    written = read_hand(cells, kinds)
     user = [[0] * 9 for _ in range(9)]
     for (r, c), k in kinds.items():
         if k == hand.HAND:
-            user[r][c], read[r][c] = read[r][c], 0
+            user[r][c], read[r][c] = written.get((r, c), read[r][c]), 0
             del probs[(r, c)]
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
-              "ink": ink, "backgrounds": backgrounds, "screen": screen, "user": user, "kinds": kinds}
+              "ink": ink, "backgrounds": backgrounds, "screen": screen, "user": user, "kinds": kinds,
+              "hand_probs": hand_probs}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

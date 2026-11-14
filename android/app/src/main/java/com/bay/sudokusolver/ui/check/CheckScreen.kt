@@ -375,6 +375,7 @@ private fun sheetText(s: CheckSession, i: Int): Pair<String, String> {
         }
         CellMark.UNSURE -> when (s.unsureReason(i)) {
             UnsureReason.INK -> "Is this printed?" to "The ink is close to a pen colour. If you wrote it, make it Empty (dashed)."
+            UnsureReason.HAND -> "Is this printed?" to "Read as $v, but it looks a little like handwriting. If you wrote it, choose Mark as mine."
             else -> "Is this a $v?" to "Read as $v, but not confidently. It might be a ${s.capture.secondGuess[i]} (dashed)."
         }
         CellMark.MINE -> "You wrote $v" to "Marked as yours: it goes on the board as your entry, and the puzzle is solved without it."

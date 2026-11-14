@@ -27,3 +27,4 @@ android/.idea/
 # printed-vs-handwritten: generated, recreate with make_handwritten.py / train_hand.py
 hand.npz
 hand.keras
+hand_digits.keras

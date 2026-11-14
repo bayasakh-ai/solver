@@ -10,16 +10,18 @@ import java.nio.ByteOrder
  * Runs model.tflite (from app/src/main/assets) on 28x28 digit images.
  * Input cells: ByteArray(784), 0..255, white digit on black (same as clean_cell in Python).
  * Output per cell: FloatArray(9) of probabilities for digits 1..9.
+ * The same wrapper runs hand.tflite (printed or handwritten?, see Hand.kt) with
+ * [outputs] = 1: one number per cell, P(handwritten).
  *
  * The model always runs on a fixed batch of 81 (a full grid). Resizing the batch
  * every frame made TFLite's output shape fall out of sync and crash; unused slots
  * are just zeros, and the extra work is negligible for this tiny model.
  */
-class DigitClassifier(context: Context, modelAsset: String = "model.tflite") : Closeable {
+class DigitClassifier(context: Context, modelAsset: String = "model.tflite", outputs: Int = 9) : Closeable {
 
     private val interpreter: Interpreter
     private val input = ByteBuffer.allocateDirect(BATCH * CELL * CELL * 4).order(ByteOrder.nativeOrder())
-    private val output = Array(BATCH) { FloatArray(9) }
+    private val output = Array(BATCH) { FloatArray(outputs) }
 
     init {
         val bytes = context.assets.open(modelAsset).use { it.readBytes() }

@@ -388,28 +388,59 @@ from print by colour or darkness (see above), so the signal is **shape**.
   count). Either the book is like that or a given was misread in the truth: owner to
   check against the book's answer key. If real, "exactly one solution" rejects genuine
   puzzles and needs a decision.
-- **Built in Python (2026-11-14): `hand.py` decides, `grid.cell_shape` measures,
-  `run.split_hand` applies** (handwritten digits leave `read` and come back as
-  `result["user"]`; `result["kinds"]` per cell). Rule and numbers in the `hand.py`
-  docstring: HAND = thin AND pale against the puzzle's own print; a stroke only just
-  thinner (>= 0.85) needs the shape model's P >= 0.9; other mixed signs -> UNSURE (kept
-  in the puzzle, Check asks); < 5 sure-printed cells or < 17 printed left -> no split.
-  The first version (two of three signs, height as a vote) moved 7 synthetic printed
-  digits out (glare 100 -> 85%, tilt 95 -> 90%, moire 90 -> 85%) and lost
-  screen_glare_sudokucom. Now, split on vs off (`evaluate.py --no-hand`):
+- **Built (2026-11-14), Python and Kotlin; not tested on the phone yet.**
+  `hand.py` <-> `Hand.kt` decide, `grid.cell_shape` <-> `Hand.cellShapes` measure (pure
+  Kotlin: components, 5x5 chamfer distance, histograms), `run.split_hand` <->
+  `FrameAnalyzer.read` apply. Rule and numbers in the `hand.py` docstring: HAND = thin
+  AND pale against the puzzle's own print; a stroke only just thinner (>= 0.85) needs
+  the shape model's P >= 0.9; other mixed signs -> UNSURE (stays in the puzzle, Check
+  asks); < 5 sure-printed cells or < 17 printed left -> no split. The first version
+  (two of three signs, height as a vote) moved 7 synthetic printed digits out (glare
+  100 -> 85%, tilt 95 -> 90%, moire 90 -> 85%) and lost screen_glare_sudokucom.
+  Split on vs off (`evaluate.py --no-hand`):
   - photos at 640: 63% -> **71%** of 41, no photo lost (book_pen 0/2 -> 2/2,
     book_pencil 0/4 -> 1/4: the other three are the several-solutions puzzles above).
     Printed called handwritten 0/329, handwritten found 201/205 on paper (4 unsure).
   - `--synth 20` (Windows): the 13 other conditions identical, 90% over 280.
-    **Synthetic pencil still 0%**: not looked into (is synth pencil thin and pale like
-    real pencil?).
-  - Handwritten digits read right by the print model: 178/205 (87%).
-- **Still to do:** Kotlin port (`Hand.kt`, `GridDetector` cell shapes, `hand.tflite` in
-  the app) + parity tests; coral ring + Check question for UNSURE; a reader for
-  handwritten digits (try a model trained on hand.npz, more slant / thinner strokes in
-  `make_handwritten.py`); corner notes, crossed-out digits (book_pen_02 r4c1); hand-off
-  to the board via `Capture.userEntries`; synth pencil; typed entries on screens
-  (screen_filled_*: look printed, 0/61 found).
+  - **Synthetic `pencil` stays 0% and is not a test of this**: its user digits are
+    Hershey-font digits as thick as the print (stroke median 0.96 of the print, shape
+    model P median 0.01), so the split calls them printed 221 / unsure 182 / hand 67.
+- **Reader for handwritten digits: `hand_digits.tflite`** (`train_hand_digits.py`:
+  hand.npz + digits.npz, same CNN). Only cells called HAND are read with it. On 260
+  real handwritten digits (book 205 + puzzle1's red pen 55): print model 217 (83%),
+  the reader 237-246 over three seeds (91-95%), the shipped one 242. In the pipeline
+  the book's found handwriting is read right 193/201. Commonest miss: a 1 with a flag
+  read as 7. More synthetic data (9,000 per digit) or averaging with the print model
+  did not help. The quantized tflite files agree with Keras (hand.tflite: 0 of 1,209
+  verdicts differ, max |dP| 0.022; hand_digits.tflite: 0 of 260 readings differ).
+- **In the app:** each sharp frame measures shapes, runs hand.tflite, and moves HAND
+  cells out of the reading into a separate vote (`PuzzleTracker.userEntries`: a cell
+  counts when 3 of 5 frames call it handwritten, digit = the commonest reading; looser
+  than the printed consensus so a wobbly handwritten digit can't hold up the puzzle).
+  `Capture.userEntries` carries them: Check shows them as yours (Mark as mine rules:
+  the board starts with them as the player's entries, never fixed), the puzzle is
+  solved from printed digits only. UNSURE -> `Capture.handUnsure` -> coral ring,
+  `UnsureReason.HAND`: "it looks a little like handwriting ... Mark as mine". Live AR
+  draws answers over handwritten cells too (as it already did over ignored pen).
+  - **Not measured: time on the phone.** Desktop JVM: `Hand.cellShapes` 2.3 ms per
+    frame (14 ms before histograms replaced sorting), plus two more model runs of 81,
+    on sharp frames only. Check with the debug stats / `PipelineTimingTest`.
+  - **Phone checks:** the book in pencil and in ballpoint (entries arrive on Check as
+    yours, printed digits stay, puzzle solves); a blank puzzle (nothing marked as
+    yours, no extra coral rings); glare on print (rings at most, never "yours"); thick
+    black pen (expected: stays printed or ringed); does the vote settle as fast as
+    before.
+- **The three several-solutions truths were re-checked against the flattened photos
+  (2026-11-14):** this book prints its givens on grey cells, so print and handwriting
+  can't be confused in the truth, and every given matches. The printed digits really
+  leave 8 / 9 / 16 solutions that differ in 15-22 cells, and the user's entries fit
+  all of them. So the book's puzzles are not all proper, or need a rule we don't know
+  (not diagonals: book_pencil_02 has two 4s on the main diagonal). **Owner's decision
+  still needed:** today such a scan ends on Check with "more than one solution".
+- **Still to do:** phone test (above); corner notes, crossed-out digits (book_pen_02
+  r4c1); low-confidence handwritten readings ("Is this a 4 or a 9?" before judging,
+  v1.1); typed entries on screens (screen_filled_*: look printed, 0/61 found); a
+  synthetic condition with real handwriting shapes.
 
 ---
 
@@ -424,7 +455,8 @@ from print by colour or darkness (see above), so the signal is **shape**.
   font_check.py        filters fonts -> good_fonts.txt (machine-specific, gitignored)
   train_digits.py      small CNN -> digits.keras + model.tflite
   make_handwritten.py  synthetic handwritten cells from MNIST -> hand.npz
-  train_hand.py        printed-vs-handwritten CNN -> hand.keras + hand.tflite (not in the app yet)
+  train_hand.py        printed-vs-handwritten CNN -> hand.keras + hand.tflite
+  train_hand_digits.py reader for handwritten digits -> hand_digits.keras + hand_digits.tflite
   diagnose.py          confusion matrix, worst fonts, mistakes.png, --prune
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
@@ -432,7 +464,8 @@ from print by colour or darkness (see above), so the signal is **shape**.
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
-  hand.py              printed vs handwritten decision rules    <-> Hand.kt (not ported yet)
+  hand.py              printed vs handwritten decision rules    <-> Hand.kt
+  export_hand_cases.py flattened grids + cell shapes + verdicts for HandParityTest
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
   orientation.py       which way is up: turn chosen by the reading  <-> Orientation.kt
@@ -445,11 +478,13 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     MainActivity.kt    camera setup, permission, freeze/torch/reset, hosts the ui/camera screen
     FrameAnalyzer.kt   per-frame pipeline on the analysis thread, emits FrameResult
     GridDetector.kt    Kotlin port of grid.py
-    DigitClassifier.kt TFLite wrapper, FIXED batch of 81
-    PuzzleReader.kt    PuzzleTracker (frame voting) + SelfCorrect
+    DigitClassifier.kt TFLite wrapper, FIXED batch of 81 (model.tflite, hand.tflite, hand_digits.tflite)
+    PuzzleReader.kt    PuzzleTracker (frame voting, the user's handwritten digits apart) + SelfCorrect
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
     GridCheck.kt       is a found quad a sudoku? box-line score (pure Kotlin)   <-> grid.box_line_score
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
+    Hand.kt            printed / handwritten / unsure by stroke, darkness, height against the
+                       puzzle's own print; cell shapes (pure Kotlin)   <-> hand.py + grid.cell_shape
     Solver.kt          Kotlin port of solver.py
     AnswerInk.kt       answer palettes, CellBackground medians, AnswerSteps (smoothing +
                        hysteresis), contrast + colour-vision maths (pure Kotlin)
@@ -485,8 +520,9 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/test/        SolverTest, SelfCorrectTest, PolarityTest, PolarityParityTest,
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
-                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest
-                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/
+                       GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest
+                       (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
+                       resources/hand/ from export_hand_cases.py;
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /
                        export_grid_check_cases.py)
   app/src/androidTest/ DigitClassifierTest (phone; assets: test_cells.bin, test_expected.txt),
@@ -536,6 +572,9 @@ the app between previews; it reuses the running one).
    (colour, sharp frames only; see "Ignore user ink") -> `cleanCell` -> 28x28 centred
    digit or null (empty).
 6. Model -> 9 probabilities per filled cell.
+6b. Printed or handwritten (sharp frames only; see "Printed vs handwritten"): cell
+   shapes + hand.tflite -> handwritten cells leave the reading and are read by
+   hand_digits.tflite as the user's entries; unsure ones stay and are flagged.
 7. Live only: sharp frames only (Laplacian variance of the WARPED grid > SHARP_ENOUGH=100);
    `PuzzleTracker` keeps last 5 readings, a cell is trusted when >= 3 agree.
 8. `SelfCorrect`: if no unique solution, try 2nd-4th model choices or "empty" for the
@@ -618,6 +657,8 @@ python export_test_cells.py
 python export_polarity_cases.py           # after changing looks_dark / cell_votes
 python export_grid_check_cases.py         # after changing box_line_score / BOX_LINES
 python export_ink_cases.py                # after changing ink.py / piece stats in grid.py
+python export_hand_cases.py               # after changing hand.py / cell_shape in grid.py
+python make_handwritten.py && python train_hand.py && python train_hand_digits.py   # handwriting models
 python export_background_cases.py         # after changing cell_backgrounds / answer_ink.py
 python design/icon/make_icon.py [--apply scan_dark]   # launcher icon (pip install fonttools cairosvg pillow)
 ```
@@ -628,6 +669,10 @@ cp model.tflite android/app/src/main/assets/
 python export_test_cells.py
 cp test_cells.bin test_expected.txt android/app/src/androidTest/assets/
 ```
+
+After retraining a handwriting model: `cp hand.tflite hand_digits.tflite
+android/app/src/main/assets/`, re-run `evaluate.py photos/ --frame 640` (the split table)
+and `export_hand_cases.py`.
 
 Android (from `android/`): `./gradlew testDebugUnitTest` (JVM tests),
 `./gradlew connectedDebugAndroidTest` (phone tests), or run from Android Studio.
