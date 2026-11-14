@@ -6,7 +6,8 @@ import sys
 import cv2
 import numpy as np
 
-from grid import descreen, preprocess, find_grid, grid_accept, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
+import hand
+from grid import cell_shapes, descreen, preprocess, find_grid, grid_accept, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
 from orientation import is_consistent, turn_score, choose_turn, roll_corners
 
@@ -26,6 +27,35 @@ def read_digits(cells, model):
             grid[r][c] = int(np.argmax(p)) + 1
             probs[(r, c)] = p
     return grid, probs
+
+
+HAND = True        # tell handwritten digits from printed ones (hand.py); False: before/after
+_hand_model = None
+
+
+def hand_model():
+    """The printed-vs-handwritten shape model (train_hand.py), loaded once; None if absent."""
+    global _hand_model
+    if _hand_model is None:
+        import os
+        import tensorflow as tf
+        _hand_model = tf.keras.models.load_model("hand.keras") if os.path.exists("hand.keras") else False
+    return _hand_model or None
+
+
+def split_hand(cells, warped):
+    """{(r, c): hand.PRINTED / HAND / UNSURE} for the filled cells, or {} when switched
+    off or the shape model is missing. Decision rules in hand.py."""
+    model = hand_model() if HAND else None
+    shapes = cell_shapes(warped) if model is not None else None
+    pos = [(r, c) for r in range(9) for c in range(9)
+           if cells[r][c] is not None and shapes is not None and shapes[r][c] is not None]
+    if not pos:
+        return {}
+    probs = model(np.array([cells[r][c] for r, c in pos], "float32")[..., None] / 255.0,
+                  training=False).numpy()[:, 0]
+    kinds = hand.classify([hand.Shape(*shapes[r][c]) for r, c in pos], [float(p) for p in probs])
+    return dict(zip(pos, kinds))
 
 
 def options_for(p, k=3):
@@ -152,9 +182,18 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     # user ink (coloured pen) is removed before reading: solve from printed digits only
     cells, ink = extract_cells(warped, chroma_planes(img, corners))
     read, probs = read_digits(cells, model)
+    # handwritten digits (pencil, black pen) leave the puzzle: it is solved from printed
+    # digits only. They are kept as the player's entries ("user"), read as they are and
+    # never corrected. Unsure cells stay in the puzzle; Check asks about them.
+    kinds = split_hand(cells, warped)
+    user = [[0] * 9 for _ in range(9)]
+    for (r, c), k in kinds.items():
+        if k == hand.HAND:
+            user[r][c], read[r][c] = read[r][c], 0
+            del probs[(r, c)]
     # corners/warped/probs/ink are only for inspect_photo.py: it shows what was really read
     result = {"read": read, "M": M, "corners": corners, "warped": warped, "probs": probs,
-              "ink": ink, "backgrounds": backgrounds, "screen": screen}
+              "ink": ink, "backgrounds": backgrounds, "screen": screen, "user": user, "kinds": kinds}
     if not is_plausible(read):
         return {**result, "status": "too_few_digits"}
     puzzle, solution, fixes = self_correct(read, probs)

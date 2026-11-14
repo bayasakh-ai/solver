@@ -259,6 +259,11 @@ architecture and rules.
    someone has started still scans (see "Ignore user ink" below).
 3. **v1.1:** handwriting (check progress, hints from current state, continue on phone);
    puzzle library, daily puzzle, difficulty rating.
+   **Pulled into v1 (owner, 2026-11-14): tell printed from handwritten** (pencil, black
+   pen) so a started book puzzle scans; see "Printed vs handwritten" below. *Reading*
+   the handwritten digits (check progress, hints from where I am) stays v1.1.
+   **Postponed to v2 (owner, 2026-11-14):** the 247 site's bamboo frame
+   (screen_angle_247 / screen_glare_247, snap to the 9x9 lattice).
 4. **v1.2:** monetization; continuous learning for the digit model (see below, not now).
 5. **Later:** iOS (see iOS plan).
 
@@ -336,6 +341,76 @@ Tests (status):
    black pen (expected to fail), warm indoor light, a magazine with coloured digits
    (safety net). Also time `warpChroma` + piece stats on sharp frames.
 
+### Printed vs handwritten (v1, started 2026-11-14; Python only so far)
+
+Why now: the owner's phone test on a sudoku book. Pencil and black pen can't be told
+from print by colour or darkness (see above), so the signal is **shape**.
+
+- **Owner's decision (2026-11-14): don't ignore handwriting, carry it over.** Printed
+  digits = the puzzle (givens, not editable); handwritten digits are read and start the
+  board as the player's entries (editable, right or wrong, never fixed: the Mark as mine
+  rules, `Capture.userEntries`). The puzzle is still solved from printed digits only.
+  Checking progress / hints from where I am on paper stay v1.1.
+- **A separate small model** (`hand.tflite`, same 28x28 cleaned cell as the digit
+  model), so `model.tflite` and its parity tests stay untouched.
+  `make_handwritten.py`: MNIST digits redrawn as cell entries (size, stroke thinned to
+  1.6-4.2 px, slant, offset, grey ink, grid lines, blur, noise) through the same
+  `binarize` + `clean_cell`. `train_hand.py`: printed = digits.npz, handwritten =
+  hand.npz, 27,000 each.
+- **First numbers (2026-11-14, 640 px, gray only, threshold 0.5):** synthetic validation
+  97.9%. Real cells: printed called handwritten 27/725 (3.7%; 14 of them in
+  screen_glare_247, a bad warp that fails anyway; 13/709 = 1.8% without it; book,
+  puzzle1/3/4 0), puzzle1's red-pen digits called handwritten 52/55 (94.5%).
+  Typed entries on screens (screen_filled_*) look printed: 6/61 flagged, as expected.
+- **Geometry alone is not enough** (puzzle1): printed height 25-31 px vs pen 21-38,
+  width 11-22 vs 6-38, stroke 3.8-4.7 vs 2.7-3.8: overlapping. Possible second signal
+  later (printed digits of one puzzle share a size and baseline).
+- **Owner's book photos (2026-11-14): `book_pen_01-02`, `book_pencil_01-04`** (one
+  writer, thin cursive digits; truths drafted by Claude from the photos, the three
+  finished ones confirmed by the solver; owner to confirm). 640 px, gray only:
+  | | printed called hand | hand called hand (CNN >= 0.5) | hand digit read right (print model) |
+  |---|---|---|---|
+  | book pen | 2/58 | 87/104 (84%) | 91/104 (88%) |
+  | book pencil | 0/120 | 83/101 (82%) | 90/101 (89%) |
+  | puzzle1 red pen | 0/25 | 52/55 | 36/55 (65%) |
+  Pencil is not lost by `binarize` (0 handwritten cells missed).
+- **Better signal than the CNN: stroke width and ink darkness relative to the puzzle's
+  own printed digits** (reference = median over cells the CNN is sure are printed,
+  P < 0.1). Stroke = 2 x mean of the top fifth of the distance transform; darkness =
+  (paper - ink p25) / paper. Printed (713 cells, 24 photos): stroke 0.89-1.20,
+  darkness 0.77-1.13 (p1-p99). Handwritten (260): stroke 0.61-0.91, darkness 0.32-0.85.
+  Rule **stroke < 0.92 AND darkness < 0.88**: printed flagged 0/713, handwritten missed
+  2/260 (CNN alone: 8 / 38). Thresholds were picked on these same cells (two writers,
+  one book + one newspaper): not a held-out number. Fails by design when the print is
+  thin and the pen is thick; the CNN is the fallback there (disagreement -> unsure).
+- **Three of the six book puzzles have several solutions** from their printed digits
+  (book_pencil_02: 8, _03: 9, _04: 16; adding the handwritten digits doesn't change the
+  count). Either the book is like that or a given was misread in the truth: owner to
+  check against the book's answer key. If real, "exactly one solution" rejects genuine
+  puzzles and needs a decision.
+- **Built in Python (2026-11-14): `hand.py` decides, `grid.cell_shape` measures,
+  `run.split_hand` applies** (handwritten digits leave `read` and come back as
+  `result["user"]`; `result["kinds"]` per cell). Rule and numbers in the `hand.py`
+  docstring: HAND = thin AND pale against the puzzle's own print; a stroke only just
+  thinner (>= 0.85) needs the shape model's P >= 0.9; other mixed signs -> UNSURE (kept
+  in the puzzle, Check asks); < 5 sure-printed cells or < 17 printed left -> no split.
+  The first version (two of three signs, height as a vote) moved 7 synthetic printed
+  digits out (glare 100 -> 85%, tilt 95 -> 90%, moire 90 -> 85%) and lost
+  screen_glare_sudokucom. Now, split on vs off (`evaluate.py --no-hand`):
+  - photos at 640: 63% -> **71%** of 41, no photo lost (book_pen 0/2 -> 2/2,
+    book_pencil 0/4 -> 1/4: the other three are the several-solutions puzzles above).
+    Printed called handwritten 0/329, handwritten found 201/205 on paper (4 unsure).
+  - `--synth 20` (Windows): the 13 other conditions identical, 90% over 280.
+    **Synthetic pencil still 0%**: not looked into (is synth pencil thin and pale like
+    real pencil?).
+  - Handwritten digits read right by the print model: 178/205 (87%).
+- **Still to do:** Kotlin port (`Hand.kt`, `GridDetector` cell shapes, `hand.tflite` in
+  the app) + parity tests; coral ring + Check question for UNSURE; a reader for
+  handwritten digits (try a model trained on hand.npz, more slant / thinner strokes in
+  `make_handwritten.py`); corner notes, crossed-out digits (book_pen_02 r4c1); hand-off
+  to the board via `Capture.userEntries`; synth pencil; typed entries on screens
+  (screen_filled_*: look printed, 0/61 found).
+
 ---
 
 ## Repo layout
@@ -348,6 +423,8 @@ Tests (status):
   make_digits.py       synthetic printed-digit dataset (system fonts)
   font_check.py        filters fonts -> good_fonts.txt (machine-specific, gitignored)
   train_digits.py      small CNN -> digits.keras + model.tflite
+  make_handwritten.py  synthetic handwritten cells from MNIST -> hand.npz
+  train_hand.py        printed-vs-handwritten CNN -> hand.keras + hand.tflite (not in the app yet)
   diagnose.py          confusion matrix, worst fonts, mistakes.png, --prune
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
   synth.py             synthetic puzzle photos under 10 conditions (used by evaluate.py)
@@ -355,6 +432,7 @@ Tests (status):
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest
   ink.py               printed vs user ink decision rules       <-> InkClassifier.kt
+  hand.py              printed vs handwritten decision rules    <-> Hand.kt (not ported yet)
   export_ink_cases.py  ink-piece stats + verdicts for InkClassifierTest
   answer_ink.py        answer colour step per cell (deep/bright)  <-> AnswerInk.kt
   orientation.py       which way is up: turn chosen by the reading  <-> Orientation.kt

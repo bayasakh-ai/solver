@@ -386,6 +386,48 @@ def clean_cell(cell, out=DIGIT_SIZE):
     return canvas
 
 
+def cell_shape(bin_cell, gray_cell):
+    """(stroke, dark, height) of the digit in one cell, for hand.py, or None if empty.
+    Same crop and kept pieces as clean_cell. stroke: twice the mean depth of the deepest
+    fifth of the ink (distance to the nearest paper pixel). dark: how far the ink (its
+    25th percentile) is below the paper around it, as a share of the paper. height: the
+    digit's bounding box, px."""
+    h, w = bin_cell.shape
+    m = int(0.12 * h)
+    inner = bin_cell[m:h - m, m:w - m]
+    gray = gray_cell[m:h - m, m:w - m]
+    n, labels, stats, cents = cv2.connectedComponentsWithStats(inner, connectivity=8)
+    ih, iw = inner.shape
+    keep, largest = [], 0
+    for i in range(1, n):
+        area = stats[i, cv2.CC_STAT_AREA]
+        cx, cy = cents[i]
+        if area < 0.01 * ih * iw:
+            continue
+        if abs(cx - iw / 2) > iw * 0.35 or abs(cy - ih / 2) > ih * 0.35:
+            continue
+        keep.append(i)
+        largest = max(largest, area)
+    if largest < 0.03 * ih * iw:
+        return None
+    mask = np.isin(labels, keep)
+    ys = np.nonzero(mask)[0]
+    depth = cv2.distanceTransform(np.pad(mask.astype(np.uint8), 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    deepest = np.sort(depth[mask])[-max(1, int(mask.sum()) // 5):]
+    paper = float(np.median(gray[~mask]))
+    ink = float(np.percentile(gray[mask], 25))
+    return (2 * float(deepest.mean()), (paper - ink) / max(paper, 1.0), float(ys.max() - ys.min() + 1))
+
+
+def cell_shapes(warped):
+    """9x9 cell_shape of the flattened, dark-on-light grid (None = empty cell)."""
+    th = binarize(warped)
+    step = warped.shape[0] // 9
+    return [[cell_shape(th[r * step:(r + 1) * step, c * step:(c + 1) * step],
+                        warped[r * step:(r + 1) * step, c * step:(c + 1) * step])
+             for c in range(9)] for r in range(9)]
+
+
 def binarize(gray_img):
     """Ink -> white, paper -> black. C=10 ignores paper texture and shading;
     the old C=2 turned paper grain in empty cells into fake digits.

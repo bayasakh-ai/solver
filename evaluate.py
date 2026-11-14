@@ -165,6 +165,44 @@ def fit_frame(img, long_side):
     return cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA if f < 1 else cv2.INTER_LINEAR)
 
 
+def hand_counts(res, truth, user):
+    """For a photo with a .user.txt: how the printed / handwritten split and the reading
+    of the handwritten digits went. Counts over the truth's cells."""
+    kinds, got = res.get("kinds") or {}, res.get("user")
+    c = defaultdict(int)
+    if got is None:
+        return c
+    for r in range(9):
+        for col in range(9):
+            k = kinds.get((r, col))
+            if truth[r][col]:
+                c["printed"] += 1
+                c["printed_as_hand"] += k == "hand"
+                c["printed_unsure"] += k == "unsure"
+            elif user[r][col]:
+                c["hand"] += 1
+                c["hand_found"] += k == "hand"
+                c["hand_unsure"] += k == "unsure"
+                c["hand_read_right"] += got[r][col] == user[r][col]
+    return c
+
+
+def report_hand(hands):
+    if not hands:
+        return
+    print("\nprinted / handwritten split (photos with a .user.txt)")
+    print(f"{'photo':<28} {'printed->hand':>14} {'unsure':>7} {'hand found':>12} {'unsure':>7} {'hand read right':>16}")
+    total = defaultdict(int)
+    for name, c in hands:
+        for k, v in c.items():
+            total[k] += v
+    for name, c in hands + [("TOTAL", total)]:
+        if c["printed"] + c["hand"] == 0:
+            continue
+        print(f"{name:<28} {c['printed_as_hand']:>7}/{c['printed']:<6} {c['printed_unsure']:>7} "
+              f"{c['hand_found']:>6}/{c['hand']:<5} {c['hand_unsure']:>7} {c['hand_read_right']:>9}/{c['hand']:<6}")
+
+
 def finds_grid(img):
     """Does either polarity report a grid? (process() only reports its first attempt.)"""
     from grid import preprocess, find_grid, grid_accept
@@ -178,6 +216,7 @@ def finds_grid(img):
 def run_real(model, folder, frame=None, find_frame=None):
     results = defaultdict(list)
     steps = defaultdict(list)
+    hands = []
     images = sorted(f for ext in ("jpg", "jpeg", "png")
                     for f in glob.glob(os.path.join(folder, f"*.{ext}"))
                     if not f.endswith("_solved.jpg"))
@@ -200,8 +239,11 @@ def run_real(model, folder, frame=None, find_frame=None):
         group = re.sub(r"[_-]?\d+$", "", name) or name
         results[group].append((status, misreads, 0))
         steps[group].append(step_counts(res, truth))
+        if user is not None:
+            hands.append((name, hand_counts(res, truth, user)))
         if status not in ("solved", "solved_extra"):
             save_failure(img, name, status, res, truth)
+    report_hand(hands)
     return results, steps
 
 
@@ -213,12 +255,16 @@ def main():
     ap.add_argument("--frame", type=int, help="real photos: resize so the long side is N px "
                     "(640 = the app's 640x480 analysis frame)")
     ap.add_argument("--no-grid-check", action="store_true", help="measure without looks_like_grid")
+    ap.add_argument("--no-hand", action="store_true", help="measure without the printed / handwritten split")
     ap.add_argument("--find-frame", type=int, help="real photos: find the grid on a copy with "
                     "long side N px, warp and read from the --frame image")
     args = ap.parse_args()
     if not args.folder and not args.synth:
         ap.error("give a folder of photos, or --synth N")
 
+    if args.no_hand:
+        import run
+        run.HAND = False
     if args.no_grid_check:
         import grid
         grid.GRID_CHECK = False
