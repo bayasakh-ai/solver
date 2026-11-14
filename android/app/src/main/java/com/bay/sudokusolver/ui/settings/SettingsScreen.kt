@@ -47,7 +47,7 @@ import com.bay.sudokusolver.ui.theme.Ramp
 import com.bay.sudokusolver.ui.theme.SudofolioTheme
 import com.bay.sudokusolver.ui.theme.SudokuType
 
-/* Settings (design v2, "Settings"): answer palette, game board helpers and the debug thumbnail. */
+/* Settings (design v2, "Settings"): answer palette, game board helpers, the debug thumbnail, the welcome again. */
 
 private data class PaletteInfo(val name: String, val note: String?, val recommended: Boolean)
 
@@ -64,6 +64,7 @@ fun SettingsScreen(
     onPalette: (AnswerPalette) -> Unit,
     onDebug: (Boolean) -> Unit,
     onBoard: (BoardSettings) -> Unit,
+    onWelcome: () -> Unit,
     onBack: () -> Unit,
 ) {
     // Surface blocks touches, so nothing reaches the camera screen underneath
@@ -129,6 +130,10 @@ fun SettingsScreen(
 
             Text("Camera", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp))
             ToggleRow("Debug thumbnail", "Shows the flattened grid and frame stats over the camera.", debug, onDebug,
+                Modifier.padding(horizontal = 20.dp))
+
+            Text("About", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp))
+            LinkRow("How scanning works", "The welcome pages, once more.", onWelcome,
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp))
         }
     }
@@ -176,6 +181,23 @@ private fun Swatch(palette: AnswerPalette, step: AnswerStep, background: Color) 
     }
 }
 
+/** A row that opens something. */
+@Composable
+private fun LinkRow(title: String, text: String, onClick: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 76.dp)
+            .clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = Classical.TextSecondary)
+        }
+        Icon(LucideIcons.ChevronRight, contentDescription = null, tint = Classical.TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
 @Composable
 private fun ToggleRow(title: String, text: String, on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier) {
     Row(
@@ -209,7 +231,7 @@ private fun ToggleRow(title: String, text: String, on: Boolean, onChange: (Boole
 @Composable
 private fun SettingsPreview() {
     SudofolioTheme {
-        SettingsScreen(AnswerPalette.INK_BLUE, debug = false, board = BoardSettings(), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
+        SettingsScreen(AnswerPalette.INK_BLUE, debug = false, board = BoardSettings(), onPalette = {}, onDebug = {}, onBoard = {}, onWelcome = {}, onBack = {})
     }
 }
 
@@ -217,6 +239,6 @@ private fun SettingsPreview() {
 @Composable
 private fun SettingsPreviewHc() {
     SudofolioTheme(AnswerPalette.HIGH_CONTRAST) {
-        SettingsScreen(AnswerPalette.HIGH_CONTRAST, debug = true, board = BoardSettings(showMistakes = true), onPalette = {}, onDebug = {}, onBoard = {}, onBack = {})
+        SettingsScreen(AnswerPalette.HIGH_CONTRAST, debug = true, board = BoardSettings(showMistakes = true), onPalette = {}, onDebug = {}, onBoard = {}, onWelcome = {}, onBack = {})
     }
 }

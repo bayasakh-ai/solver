@@ -28,6 +28,13 @@ class RouteTest {
         assertEquals(Route.Check(capture), settings.back()!!.current)
     }
 
+    @Test fun theWelcomeOpensOverTheCameraOrOverSettings() {
+        val firstRun = NavStack().open(Route.Welcome)
+        assertEquals(NavStack(), firstRun.back())
+        val replay = NavStack().open(Route.Settings).open(Route.Welcome)
+        assertEquals(Route.Settings, replay.back()!!.current)
+    }
+
     @Test fun doubleTapDoesNotStackTheSameScreenTwice() {
         val once = NavStack().open(Route.Settings)
         assertSame(once, once.open(Route.Settings))

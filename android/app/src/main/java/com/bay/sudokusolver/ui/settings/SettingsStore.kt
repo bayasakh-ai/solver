@@ -22,6 +22,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_DEBUG, false)
         set(value) = prefs.edit().putBoolean(KEY_DEBUG, value).apply()
 
+    /**
+     * The welcome pages were finished once (or Not now was chosen). False on a fresh
+     * install. Android's backup restores it on a new phone, where the camera isn't
+     * allowed yet: the no-camera screen's Allow camera button covers that.
+     */
+    var welcomeSeen: Boolean
+        get() = prefs.getBoolean(KEY_WELCOME, false)
+        set(value) = prefs.edit().putBoolean(KEY_WELCOME, value).apply()
+
     /** Play board helpers ("Game board"). Missing keys fall back to BoardSettings' defaults. */
     var board: BoardSettings
         get() {
@@ -49,6 +58,7 @@ class SettingsStore(context: Context) {
     private companion object {
         const val KEY_PALETTE = "answer_palette"
         const val KEY_DEBUG = "debug_thumbnail"
+        const val KEY_WELCOME = "welcome_seen"
         const val KEY_MISTAKES = "board_show_mistakes"
         const val KEY_TIMER = "board_show_timer"
         const val KEY_CONFLICTS = "board_highlight_conflicts"
