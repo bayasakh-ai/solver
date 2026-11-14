@@ -26,7 +26,7 @@ from collections import defaultdict
 import cv2
 import numpy as np
 
-from run import process, show
+from run import process, process_zoom, show
 from solver import solve
 from answer_ink import step_for, DEEP, BRIGHT
 
@@ -215,10 +215,11 @@ def finds_grid(img):
     return False
 
 
-def run_real(model, folder, frame=None, find_frame=None):
+def run_real(model, folder, frame=None, find_frame=None, zoom=False):
     results = defaultdict(list)
     steps = defaultdict(list)
     hands = []
+    zoomed = []
     images = sorted(f for ext in ("jpg", "jpeg", "png")
                     for f in glob.glob(os.path.join(folder, f"*.{ext}"))
                     if not f.endswith("_solved.jpg"))
@@ -235,7 +236,9 @@ def run_real(model, folder, frame=None, find_frame=None):
         user = load_truth(user_path) if os.path.exists(user_path) else None
         img = fit_frame(cv2.imread(path), frame)
         find_scale = find_frame / max(img.shape[:2]) if find_frame else 1.0
-        res = process(img, model, find_scale=min(find_scale, 1.0))
+        res = process_zoom(img, model) if zoom else process(img, model, find_scale=min(find_scale, 1.0))
+        if zoom and res.get("view") == "zoom":
+            zoomed.append(name)
         status, misreads = judge(res, truth, truth_user=user)
         name = os.path.splitext(os.path.basename(path))[0]
         group = re.sub(r"[_-]?\d+$", "", name) or name
@@ -246,6 +249,8 @@ def run_real(model, folder, frame=None, find_frame=None):
         if status not in ("solved", "solved_extra"):
             save_failure(img, name, status, res, truth)
     report_hand(hands)
+    if zoom:
+        print(f"\nread from the zoomed middle: {len(zoomed)} of {len(images)} photos {zoomed}")
     return results, steps
 
 
@@ -257,6 +262,8 @@ def main():
     ap.add_argument("--frame", type=int, help="real photos: resize so the long side is N px "
                     "(640 = the app's 640x480 analysis frame)")
     ap.add_argument("--no-grid-check", action="store_true", help="measure without looks_like_grid")
+    ap.add_argument("--zoom", action="store_true", help="real photos: the app's zoom mode (run.process_zoom); "
+                    "use with --frame 1280, the size of the frame the app then takes")
     ap.add_argument("--no-hand", action="store_true", help="measure without the printed / handwritten split")
     ap.add_argument("--no-notes", action="store_true", help="measure without the pencil-note rule (hand.NOTE_HEIGHT)")
     ap.add_argument("--find-frame", type=int, help="real photos: find the grid on a copy with "
@@ -277,7 +284,7 @@ def main():
     import tensorflow as tf
     model = tf.keras.models.load_model("digits.keras")
     shutil.rmtree("eval_failures", ignore_errors=True)
-    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder, args.frame, args.find_frame)
+    results, steps = run_synth(model, args.synth, args.seed) if args.synth else run_real(model, args.folder, args.frame, args.find_frame, args.zoom)
     if not results:
         print("nothing to evaluate")
         return

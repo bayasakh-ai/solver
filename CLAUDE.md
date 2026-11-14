@@ -487,9 +487,26 @@ from print by colour or darkness (see above), so the signal is **shape**.
   handwritten digits (18 misread): 0.8 asks about 21 (8%) and catches 10, the second
   choice right for 7 of them; 0.9 asks about 41 for the same 10. The other 8 are
   confident misreads (a flagged 1 read as 7).
-- **Still to do:** corner notes, crossed-out digits (book_pen_02 r4c1); typed entries
-  on screens (screen_filled_*: look printed, 0/61 found); thick handwriting next to
-  thin print (see `handwritten` below); phone timing of the handwriting step.
+- **Pencil notes are skipped (2026-11-15, `hand.NOTE` <-> `HandKind.NOTE`; no real
+  photo with notes yet, the numbers are synthetic).** New `notes` condition in
+  `synth.py`: small handwritten digits (a fifth to a third of the cell) at keypad
+  positions, in a row along the top, or loose, the centre included. Before: 52% of
+  note cells were read as a digit and most of those went to the board as the player's
+  answers (46% of all note cells). Rule: a cell that would be HAND but whose **tallest
+  single piece is under 0.75 x the print's height** is a NOTE: read as empty, not the
+  puzzle, not an entry. Notes carried as answers 46% -> **11%** (489 -> 113 of 1,070
+  cells); printed digits untouched; real photos solve as before (2 of 205 real
+  handwritten digits are taken for notes and simply not carried). UNSURE cells are
+  never called notes (a glare-eaten printed digit is that short too), so ~7% of note
+  cells stay in the puzzle with a ring; `notes` solves 85% with or without the rule
+  (the rule changes what reaches the board, not the solve). `evaluate.py --no-notes`.
+- **Crossed-out digits:** one real example (book_pen_02 r4c1: a scribbled digit with a
+  2 beside it). It comes out UNSURE (thin but dark; ink share 0.18 against <= 0.15 for
+  the page's other handwriting), i.e. ringed and asked about, which is what the rule
+  wants; `HandParityTest` pins it. No rule was built on one example.
+- **Still to do:** typed entries on screens (screen_filled_*: look printed, 0/61
+  found); thick handwriting next to thin print (see `handwritten` below); phone timing
+  of the handwriting step; a real photo with pencil notes.
 - **Synthetic `handwritten` condition** (`synth.py`, appended last; MNIST digits redrawn
   thin in pencil grey / ballpoint dark via `make_handwritten.glyph`, a third of them
   wrong): 0% without the split, **35%** with it (Windows, --synth 20; the 14 earlier
@@ -518,7 +535,7 @@ from print by colour or darkness (see above), so the signal is **shape**.
   train_hand_digits.py reader for handwritten digits -> hand_digits.keras + hand_digits.tflite
   diagnose.py          confusion matrix, worst fonts, mistakes.png, --prune
   evaluate.py          solve-rate report: --synth N, or a folder of real photos + .txt truths
-  synth.py             synthetic puzzle photos under 15 conditions (used by evaluate.py)
+  synth.py             synthetic puzzle photos under 16 conditions (used by evaluate.py)
   export_test_cells.py sample cells + TFLite outputs for the Android model test
   export_polarity_cases.py  flattened grids + dark-mode votes for PolarityParityTest
   export_grid_check_cases.py  binarized quads (grids and not) + box-line scores for GridCheckParityTest
@@ -539,6 +556,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     GridDetector.kt    Kotlin port of grid.py
     DigitClassifier.kt TFLite wrapper, FIXED batch of 81 (model.tflite, hand.tflite, hand_digits.tflite)
     PuzzleReader.kt    PuzzleTracker (frame voting, the user's handwritten digits apart) + SelfCorrect
+    Zoom.kt            small puzzles: WIDE / ZOOM views of a 1280x960 frame, ZoomPolicy, corner
+                       mapping (pure Kotlin)   <-> run.process_zoom
     Polarity.kt        dark-mode vote (looks_dark) + GridPolarity search policy
     GridCheck.kt       is a found quad a sudoku? box-line score (pure Kotlin)   <-> grid.box_line_score
     InkClassifier.kt   printed / user / unsure ink pieces, safety net (pure Kotlin)
@@ -582,7 +601,8 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        InkClassifierTest, AnswerInkTest, ScanStateTest, BackgroundParityTest,
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
                        GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest,
-                       HintAdvancedTest (resources/hints/real_puzzles.txt: the photos' puzzles), HintKeysTest
+                       HintAdvancedTest (resources/hints/real_puzzles.txt: the photos' puzzles), HintKeysTest,
+                       ZoomTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
                        resources/hand/ from export_hand_cases.py;
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /
@@ -609,7 +629,9 @@ the app between previews; it reuses the running one).
 
 ## Pipeline
 
-1. Frame (Y plane, 640x480) -> rotate upright by `rotationDegrees`.
+1. Frame (Y plane, 640x480) -> rotate upright by `rotationDegrees`. With the zoom
+   setting on: a 1280x960 frame, of which one 640x480 view is analysed per frame, the
+   whole frame shrunk or its middle (see "Zoom for small puzzles").
 2. `preprocess`: GaussianBlur 7x7 + adaptiveThreshold(GAUSSIAN, INV, 11, 2).
 3. `findGrid`: largest convex 4-point contour (border method). If that fails ->
    cell-lattice fallback: square holes of similar size, BFS to assign (col,row),
@@ -713,6 +735,8 @@ python train_digits.py                    # check val_accuracy (~0.996)
 python diagnose.py [--prune 0.05]
 python evaluate.py --synth 20             # synthetic stress test
 python evaluate.py photos/                # real photos with .txt truths
+python evaluate.py photos/ --frame 640    # ... at the app's frame size (the number to quote)
+python evaluate.py photos/ --frame 1280 --zoom   # ... through the zoom mode (Zoom.kt)
 python run.py photo.jpg                   # single photo -> photo_solved.jpg
 python inspect_photo.py photos/x.jpg      # which stage fails -> eval_failures/x_inspect.png
 python export_test_cells.py
@@ -823,6 +847,36 @@ the printed reading. inspect_photo.py reads both.
     Finding at 1280 is ~6.5x over the 5 ms budget; the hybrid keeps finding at 640 cost
     and adds ~3.7 ms per read (reads run on sharp frames only). The hybrid is the
     affordable way to read small grids; it needs the descreen step ported first.
+  - **Zoom for small puzzles (2026-11-15, `Zoom.kt` <-> `run.process_zoom`; Settings ->
+    Camera -> "Zoom in on small puzzles", OFF by default: not timed or seen on the
+    phone).** The hybrid above was built in Python and dropped: reading from 1280 after
+    finding at 640 solves nothing more, because small grids are not FOUND at 640
+    (and reading every grid from 1280 lost both book-pen photos: the handwriting
+    thresholds were set at 640). What works at the old cost: take a 1280x960 frame and
+    analyse one of two 640x480 views of it, WIDE (the whole frame shrunk by 2, as
+    always) or ZOOM (its middle at full resolution, a 2x zoom). `ZoomPolicy`: a grid
+    under 10% of the frame inside the middle half -> ZOOM; back to WIDE at 16% or at
+    the zoom's edge; nothing found -> the views take turns, two frames each (one per
+    polarity). Corners stay in WIDE pixels outside `FrameAnalyzer`, so overlay,
+    smoothing, size advice and the Check photo don't change. Size sweep (13 photos
+    shrunk into a 1280x960 frame; solved of 12-13):
+    | grid share of the frame | 12% | 9% | 7% | 5.5% | 4.5% | 3.5% | 2.8% |
+    |---|---|---|---|---|---|---|---|
+    | wide only (today) | 7 | 6 | 6 | 6 | 4 | 2 | 0 |
+    | find 640, read 1280 | 7 | 6 | 6 | 6 | 4 | 3 | 0 |
+    | find + read at 1280 | 9 | 9 | 9 | 9 | 7 | 8 | 1 |
+    | **zoom mode** | 9 | 12 | 12 | 11 | 9 | 9 | 6 |
+    `evaluate.py photos/ --frame 1280 --zoom`: the 41 photos as at 640 (71%; the two
+    small screens are now found but still not solved), handwriting table identical.
+    **Moire in the zoom view:** the dark-mode vote looks at a 5x5-Gaussian copy, digits
+    are read from the untouched warp (photos at full size + --synth 20: fixes
+    screen_sudokucom and moire 90 -> 100%, nothing else moves). The gated descreen
+    below was NOT used: `cell_texture` counts digit ink, so a filled paper puzzle
+    (book_pencil_01: 72) was softened too and lost handwriting.
+    **Phone checks:** fps and ms with the setting on (the Y plane copy is 4x bigger);
+    a puzzle at arm's length; a newspaper page with a small puzzle; a normal-size
+    puzzle still locks as fast (searching alternates views); switching the setting
+    restarts the camera. Then decide whether it becomes the default.
   - **Moire at full resolution breaks the dark-mode vote**: empty screen cells get
     enough contrast to vote at random (screen_web 36/34, sudokucom 30/46 the wrong way).
     At 640 the frame's area downscale averages it out (dark votes <= 7 on every screen

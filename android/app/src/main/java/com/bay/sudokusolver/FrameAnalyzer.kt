@@ -53,6 +53,7 @@ class FrameAnalyzer(
 
     private val tracker = PuzzleTracker()
     private val polarity = GridPolarity()
+    private val zoom = ZoomPolicy() // which view of a big frame the next frame looks at (Zoom.kt)
     private var solved: SolveResult? = null
     private var solvedFrom: IntArray? = null // the consensus reading that was solved
     private var capture: Capture? = null     // hand-off to the Check screen, one per consensus
@@ -144,7 +145,11 @@ class FrameAnalyzer(
         }
         image.use { frame ->
             val start = System.nanoTime()
-            val raw = yPlaneToMat(frame)
+            // a big frame is analysed as one of two 640x480 views, the whole of it shrunk or
+            // its middle at full resolution (small puzzles: Zoom.kt); a 640x480 frame as it is
+            val zoomable = maxOf(frame.width, frame.height) >= Zoom.BIG_FRAME
+            val view = if (zoomable) zoom.view else FrameView.WIDE
+            val raw = viewOf(yPlaneToMat(frame), view, zoomable)
             val gray = rotateUpright(raw, frame.imageInfo.rotationDegrees)
             if (gray !== raw) raw.release()
 
@@ -155,13 +160,17 @@ class FrameAnalyzer(
             // a quad counts only if its flattened image shows the box lines (GridCheck):
             // otherwise book covers, titles and keyboards flash up as grids. Judged once:
             // the grid already on screen is kept as it is, so a blurred frame doesn't drop it
-            val onScreen = smoothed
+            // corners are kept in WIDE pixels; this frame's work is in its own view's pixels
+            val onScreen = smoothed?.let { Zoom.toView(view, it, gray.cols(), gray.rows()) }
             val corners = GridDetector.findGrid(th) { quad ->
                 (onScreen != null && GridCheck.sameQuad(flatten(quad.toList()), onScreen)) ||
                     GridDetector.looksLikeGrid(source, quad)
             }
             th.release()
-            if (corners == null) polarity.onMiss()
+            if (corners == null) {
+                polarity.onMiss()
+                if (zoomable) zoom.onMiss()
+            }
 
             frames++
             val now = System.nanoTime()
@@ -177,11 +186,14 @@ class FrameAnalyzer(
                 // on the nearest corner of the last frame, so the grid's "up" (decided by
                 // the reading, below) survives turning the phone past 45 degrees
                 var pts = corners.toList()
-                smoothed?.let { prev -> pts = Orientation.roll(pts, Orientation.bestRoll(flatten(pts), prev)) }
+                onScreen?.let { prev -> pts = Orientation.roll(pts, Orientation.bestRoll(flatten(pts), prev)) }
                 var (warped, m) = GridDetector.warp(source, pts.toTypedArray())
                 m.release()
                 val pixels = ByteArray(warped.rows() * warped.cols())
-                warped.get(0, 0, pixels)
+                // full-resolution pixels show a screen's moire, and empty cells then vote at
+                // random: in the zoom view the vote looks at a softened copy (Zoom.kt)
+                if (view == FrameView.ZOOM) GridDetector.softened(warped).let { it.get(0, 0, pixels); it.release() }
+                else warped.get(0, 0, pixels)
                 // the cells decide: digits must be dark-on-light for binarize + the model
                 val looksDark = Polarity.looksDark(pixels, warped.cols())
                 if (polarity.onFound(searchedInverted, looksDark)) {
@@ -218,7 +230,7 @@ class FrameAnalyzer(
                 val steps = answerSteps.update(backgrounds, palette, screen)
                 val stepsMicros = (System.nanoTime() - stepsStart) / 1_000
                 // colour only for frames that get read: copying + warping U/V costs time
-                val chroma = if (isSharp) warpChroma(frame, pts.toTypedArray()) else null
+                val chroma = if (isSharp) warpChroma(frame, pts.toTypedArray(), view, zoomable) else null
                 val extracted = GridDetector.extractCells(warped, chroma)
                 chroma?.let { it.first.release(); it.second.release() }
                 val cells = extracted.cells
@@ -232,10 +244,11 @@ class FrameAnalyzer(
                     read(cells, shapes)
                     ink = extracted.ink
                 }
-                val state = updateSolution(isSharp,
-                    ScanState.gridShare(flatten(pts), gray.cols(), gray.rows()))
+                val wide = Zoom.toWide(view, flatten(pts), gray.cols(), gray.rows())
+                if (zoomable) zoom.onFound(wide, gray.cols(), gray.rows())
+                val state = updateSolution(isSharp, ScanState.gridShare(wide, gray.cols(), gray.rows()))
 
-                smoothed = smooth(flatten(pts), smoothed, gray.cols())
+                smoothed = smooth(wide, smoothed, gray.cols())
                 val s = solved
                 result = FrameResult(smoothed!!.copyOf(), gray.cols(), gray.rows(), thumb, sharp, digits,
                     (System.nanoTime() - start) / 1_000_000, fps, state,
@@ -262,9 +275,9 @@ class FrameAnalyzer(
      * U and V of this frame, upright and warped like the gray grid (450x450). The planes
      * are half resolution (YUV_420_888), so the corners are halved (GridDetector.warpHalf).
      */
-    private fun warpChroma(image: ImageProxy, corners: Array<Point>): Pair<Mat, Mat> {
+    private fun warpChroma(image: ImageProxy, corners: Array<Point>, view: FrameView, zoomable: Boolean): Pair<Mat, Mat> {
         fun plane(index: Int): Mat {
-            val raw = chromaPlaneToMat(image, index)
+            val raw = viewOf(chromaPlaneToMat(image, index), view, zoomable) // same view as the gray frame
             val upright = rotateUpright(raw, image.imageInfo.rotationDegrees)
             if (upright !== raw) raw.release()
             return GridDetector.warpHalf(upright, corners).also { upright.release() }
@@ -359,6 +372,26 @@ class FrameAnalyzer(
         /** Starting guess for sharpness inside the flattened grid; tune on your phone. */
         const val SHARP_ENOUGH = 100.0
         private const val HOLD_NANOS = 300_000_000L
+
+        /**
+         * The part of a camera plane that is analysed: all of a small frame; of a big one
+         * ([zoomable]) the whole plane at half size (WIDE) or its middle at full size
+         * (ZOOM). Both are half the plane's width and height. Releases [full] when it
+         * returns something else.
+         */
+        fun viewOf(full: Mat, view: FrameView, zoomable: Boolean): Mat {
+            if (!zoomable) return full
+            val out = Mat()
+            if (view == FrameView.WIDE) {
+                Imgproc.resize(full, out, Size(), 0.5, 0.5, Imgproc.INTER_AREA)
+            } else {
+                val w = full.cols() / 2
+                val h = full.rows() / 2
+                full.submat(full.rows() / 4, full.rows() / 4 + h, full.cols() / 4, full.cols() / 4 + w).copyTo(out)
+            }
+            full.release()
+            return out
+        }
 
         /** The Y (brightness) plane of a YUV frame is already a grayscale image. */
         fun yPlaneToMat(image: ImageProxy): Mat {

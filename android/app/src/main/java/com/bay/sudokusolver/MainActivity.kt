@@ -77,6 +77,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var settings: SettingsStore
     private var palette by mutableStateOf(AnswerPalette.DEFAULT)
     private var debug by mutableStateOf(false)
+    private var zoomSmall by mutableStateOf(false) // Settings: analyse 1280x960 frames in two views (Zoom.kt)
+    private var cameraView: PreviewView? = null    // to start the camera again when that changes
     /** Which screen shows; the camera stays underneath (see Route.kt). */
     private var nav by mutableStateOf(NavStack())
     /** Freeze state before Check opened, restored when the flow returns to the camera. */
@@ -136,6 +138,7 @@ class MainActivity : ComponentActivity() {
         settings = SettingsStore(this)
         palette = settings.palette
         debug = settings.debug
+        zoomSmall = settings.zoom
         board = settings.board
         classifier = DigitClassifier(this)
         handClassifier = DigitClassifier(this, "hand.tflite", outputs = 1)
@@ -211,7 +214,8 @@ class MainActivity : ComponentActivity() {
                             onResume = { game?.let { nav = nav.open(Route.Play(it.puzzle, gameMode)) } },
                             onBack = ::goBack)
                         Route.Settings -> SettingsScreen(palette, debug, board,
-                            onPalette = ::choosePalette, onDebug = ::chooseDebug, onBoard = ::chooseBoard,
+                            onPalette = ::choosePalette, onDebug = ::chooseDebug, zoom = zoomSmall, onZoom = ::chooseZoom,
+                            onBoard = ::chooseBoard,
                             onWelcome = ::replayWelcome, onBack = ::goBack)
                         Route.Welcome -> welcome?.let { w ->
                             WelcomeScreen(w,
@@ -252,6 +256,13 @@ class MainActivity : ComponentActivity() {
     private fun chooseDebug(on: Boolean) {
         debug = on
         settings.debug = on
+    }
+
+    /** The analysis resolution is fixed when the camera is bound, so bind it again. */
+    private fun chooseZoom(on: Boolean) {
+        zoomSmall = on
+        settings.zoom = on
+        cameraView?.let { startCamera(it) }
     }
 
     private fun chooseBoard(b: BoardSettings) {
@@ -437,6 +448,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCamera(previewView: PreviewView) {
+        cameraView = previewView
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
@@ -449,7 +461,8 @@ class MainActivity : ComponentActivity() {
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                 .setResolutionStrategy(
                     ResolutionStrategy(
-                        android.util.Size(640, 480),
+                        // zoom: a 1280x960 frame, analysed as two 640x480 views (Zoom.kt)
+                        if (zoomSmall) android.util.Size(1280, 960) else android.util.Size(640, 480),
                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                     )
                 )

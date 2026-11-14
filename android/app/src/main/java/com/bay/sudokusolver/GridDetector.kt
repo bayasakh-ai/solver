@@ -382,6 +382,9 @@ object GridDetector {
         return Cells(cells, InkResult(applied, removed, unsure))
     }
 
+    /** A 5x5-Gaussian copy of the flattened grid, for the dark-mode vote in the zoom view (Zoom.kt). */
+    fun softened(warped: Mat): Mat = Mat().also { Imgproc.GaussianBlur(warped, it, Size(5.0, 5.0), 0.0) }
+
     /**
      * Stroke, darkness and height of the digit in each of the 81 cells of the flattened,
      * dark-on-light grid (null = empty), for the printed / handwritten split. Same as

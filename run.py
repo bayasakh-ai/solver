@@ -6,6 +6,7 @@ import sys
 import cv2
 import numpy as np
 
+import grid as grid_module
 import hand
 from grid import cell_shapes, descreen, preprocess, find_grid, grid_accept, warp, extract_cells, chroma_planes, looks_dark, cell_backgrounds, WARP_SIZE
 from solver import solve, is_plausible
@@ -141,7 +142,66 @@ def show(grid):
     return "\n".join(" ".join(str(v or ".") for v in row) for row in grid)
 
 
-def process(img, model, find_scale=1.0):
+# Small grids (Zoom.kt): the app can take a 1280x960 frame and look at it two ways at the
+# same cost, both 640x480: WIDE = the whole frame shrunk by 2 (what it always did), ZOOM =
+# the middle of the frame at full resolution. A grid below ZOOM_BELOW of the frame that
+# lies inside the middle (with ZOOM_MARGIN to spare), or no grid at all, is looked for in
+# ZOOM. Measured 2026-11-15 (13 photos shrunk into a 1280x960 frame, solved of 12-13):
+#   share of the frame   12%   9%   7%  5.5%  4.5%  3.5%  2.8%
+#   wide only (640)        7    6    6    6     4     2     0
+#   find 640, read 1280    7    6    6    6     4     3     0    (finding is the limit)
+#   find + read at 1280    9    9    9    9     7     8     1    (34 ms per find on the phone)
+#   the middle, zoomed    10   10   10   10     9     9     6
+ZOOM_BELOW = 0.10
+ZOOM_MARGIN = 0.04
+# Full-resolution pixels show a photographed screen's moire, and empty cells then vote at
+# random in the dark-mode vote. In the zoom view the vote is taken on a 5x5-Gaussian copy;
+# the digits are read from the untouched warp. Measured on photos/ at full size and
+# --synth 20: fixes screen_sudokucom and moire 90 -> 100%, everything else identical.
+# Softening the warp itself when grid.cell_texture >= 20 (("gated", 5, 20)) also fixed
+# screen_angle_expert, but the texture measure counts digit ink, so a filled paper puzzle
+# was softened too and lost handwriting (book_pen_01 at 7% of the frame: 54 -> 44 found,
+# solved -> wrong); p25-p75 or p30-p70 spreads don't separate paper from screens either.
+ZOOM_SCREEN_FIX = ("vote", 5)
+
+
+def grid_share(corners, shape):
+    """Grid area / frame area (ScanState.gridShare)."""
+    x, y = corners[:, 0], corners[:, 1]
+    return abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))) / 2 / (shape[0] * shape[1])
+
+
+def fits_zoom(corners, shape):
+    """Is the whole grid inside the middle half of the frame, with the margin to spare?"""
+    h, w = shape[:2]
+    mx, my = ZOOM_MARGIN * w, ZOOM_MARGIN * h
+    return bool(np.all((corners[:, 0] >= w / 4 + mx) & (corners[:, 0] <= 3 * w / 4 - mx) &
+                       (corners[:, 1] >= h / 4 + my) & (corners[:, 1] <= 3 * h / 4 - my)))
+
+
+def process_zoom(img, model):
+    """process() the way the app's zoom mode sees a big (1280 px) frame: the whole frame
+    at half size, and the middle at full size when the grid is small or not found there.
+    Corners and M are reported in the big frame. result["view"]: "wide" or "zoom"."""
+    h, w = img.shape[:2]
+    wide = cv2.resize(img, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
+    res = process(wide, model)
+    view, scale, offset = "wide", 2.0, (0.0, 0.0)
+    if res["status"] == "no_grid" or (grid_share(res["corners"], wide.shape) < ZOOM_BELOW
+                                      and fits_zoom(res["corners"], wide.shape)):
+        middle = img[h // 4:h // 4 + h // 2, w // 4:w // 4 + w // 2]
+        zoomed = process(middle, model, screen_fix=ZOOM_SCREEN_FIX)
+        if zoomed["status"] != "no_grid":
+            res, view, scale, offset = zoomed, "zoom", 1.0, (w // 4, h // 4)
+    res["view"] = view
+    if "corners" in res:
+        res["corners"] = (res["corners"] * scale + np.float32(offset)).astype(np.float32)
+        res["M"] = cv2.getPerspectiveTransform(res["corners"], np.float32(
+            [[0, 0], [WARP_SIZE - 1, 0], [WARP_SIZE - 1, WARP_SIZE - 1], [0, WARP_SIZE - 1]]))
+    return res
+
+
+def process(img, model, find_scale=1.0, screen_fix=None):
     """Full pipeline on one BGR image. Returns a dict; 'status' is one of:
     solved, no_grid, too_few_digits, unsolvable.
     Dark mode: the grid is searched in the image, then in its inversion if that
@@ -150,12 +210,14 @@ def process(img, model, find_scale=1.0):
     The Android app does the same per frame, one grid search per frame
     (GridPolarity in Polarity.kt).
     find_scale < 1: find the grid on a smaller copy (the cheap part the app does every
-    frame), then warp and read digits from the full-size image (measurement option)."""
+    frame), then warp and read digits from the full-size image (measurement option).
+    screen_fix: a grid.descreen setting for this image (the zoom view passes one)."""
     inverted = 255 - img
     attempts = [img, inverted] if np.median(img) >= 110 else [inverted, img]
     first = None
     for i, attempt in enumerate(attempts):
-        res = _process_once(attempt, model, searched_inverted=attempt is inverted, find_scale=find_scale)
+        res = _process_once(attempt, model, searched_inverted=attempt is inverted, find_scale=find_scale,
+                            screen_fix=screen_fix)
         res["inverted"] = attempt is inverted
         if res["status"] == "solved":
             return res
@@ -176,7 +238,7 @@ def orient(warped, model):
     return choose_turn(scores, consistent)
 
 
-def _process_once(img, model, searched_inverted=False, find_scale=1.0):
+def _process_once(img, model, searched_inverted=False, find_scale=1.0, screen_fix=None):
     gray, th = preprocess(img)
     if find_scale < 1:
         small = cv2.resize(img, None, fx=find_scale, fy=find_scale, interpolation=cv2.INTER_AREA)
@@ -189,8 +251,12 @@ def _process_once(img, model, searched_inverted=False, find_scale=1.0):
     if corners is None:
         return {"status": "no_grid"}
     warped, M = warp(gray, corners)
-    warped = descreen(warped)
-    dark = looks_dark(warped)  # a quarter turn doesn't change the per-cell vote
+    fix = screen_fix or grid_module.DESCREEN
+    if fix and fix[0] == "vote":  # ("vote", k): soften a copy for the dark-mode vote only
+        dark = looks_dark(cv2.GaussianBlur(warped, (fix[1], fix[1]), 0))
+    else:
+        warped = descreen(warped, screen_fix)
+        dark = looks_dark(warped)  # a quarter turn doesn't change the per-cell vote
     if dark:  # the cells decide, not the whole photo (shadows fool that)
         warped = 255 - warped
     screen = dark != searched_inverted  # dark page in the CAMERA's view: answers default bright
