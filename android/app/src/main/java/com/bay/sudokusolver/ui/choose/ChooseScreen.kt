@@ -57,6 +57,8 @@ fun ChooseScreen(
     onCamera: () -> Unit,
     /** Digits the user wrote on paper (Mark as mine): the board starts with them. */
     yours: Int = 0,
+    /** Check my progress: offered when the page has the user's digits on it. */
+    onProgress: () -> Unit = {},
 ) {
     val difficulty = puzzle.difficulty
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -98,6 +100,9 @@ fun ChooseScreen(
             }
 
             Column(Modifier.padding(horizontal = 22.dp).padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (yours > 0) Option(LucideIcons.Check, "Check my progress",
+                    "See how many of your $yours ${if (yours == 1) "digit fits" else "digits fit"}. " +
+                        "Where the wrong ones are stays hidden unless you ask.", onClick = onProgress)
                 Option(LucideIcons.Lightbulb, "Play with hints",
                     if (resumable || yours > 0) "Carry on where you left off. When you’re stuck, a hint shows you where to look, then why."
                     else "Solve it on the phone. When you’re stuck, a hint shows you where to look, then why.",

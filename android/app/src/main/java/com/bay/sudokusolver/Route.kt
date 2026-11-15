@@ -25,9 +25,32 @@ sealed interface Route {
     /**
      * Puzzle ready: difficulty and the three ways to play. [start]: the digits the user
      * wrote on paper (Mark as mine), 0 elsewhere; the board starts with them.
+     * [doubtful]: those of them the scan couldn't read for sure; [couldBe]: what else
+     * each could be (CheckResult.Ready).
      */
-    class Choose(val puzzle: Puzzle, val start: IntArray = IntArray(81)) : Route {
-        override fun equals(other: Any?) = other is Choose && puzzle == other.puzzle && start.contentEquals(other.start)
+    class Choose(
+        val puzzle: Puzzle,
+        val start: IntArray = IntArray(81),
+        val doubtful: Set<Int> = emptySet(),
+        val couldBe: IntArray = IntArray(81),
+    ) : Route {
+        override fun equals(other: Any?) = other is Choose && puzzle == other.puzzle && start.contentEquals(other.start) &&
+            doubtful == other.doubtful && couldBe.contentEquals(other.couldBe)
+        override fun hashCode() = puzzle.hashCode()
+    }
+
+    /**
+     * Check my progress: the digits the user wrote on the page ([entries]) against the
+     * solution, the count first (ProgressChecker). Opens from Choose.
+     */
+    class Progress(
+        val puzzle: Puzzle,
+        val entries: IntArray,
+        val doubtful: Set<Int> = emptySet(),
+        val couldBe: IntArray = IntArray(81),
+    ) : Route {
+        override fun equals(other: Any?) = other is Progress && puzzle == other.puzzle && entries.contentEquals(other.entries) &&
+            doubtful == other.doubtful && couldBe.contentEquals(other.couldBe)
         override fun hashCode() = puzzle.hashCode()
     }
 

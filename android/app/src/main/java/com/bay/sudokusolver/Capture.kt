@@ -44,6 +44,8 @@ class Capture(
      */
     val userConfidence: FloatArray = FloatArray(81) { 1f },
     val userSecondGuess: IntArray = IntArray(81),
+    /** The reader's nine probabilities for each of [userEntries] (null: no reader ran). */
+    val userProbs: Array<FloatArray?> = arrayOfNulls(81),
 ) {
     val solved: Boolean get() = solution != null
     val corrected: Set<Int> get() = fixes.mapTo(HashSet()) { it.cell }
@@ -66,6 +68,7 @@ class Capture(
             handUnsure: BooleanArray? = null,
             userConfidence: FloatArray? = null,
             userSecondGuess: IntArray? = null,
+            userProbs: Array<FloatArray?>? = null,
         ): Capture {
             require(read.size == 81 && probs.size == 81) { "need 81 cells" }
             val confidence = FloatArray(81)
@@ -90,6 +93,7 @@ class Capture(
                 handUnsure = BooleanArray(81) { read[it] != 0 && handUnsure?.get(it) == true },
                 userConfidence = FloatArray(81) { if (read[it] == 0) userConfidence?.get(it) ?: 1f else 1f },
                 userSecondGuess = IntArray(81) { if (read[it] == 0) userSecondGuess?.get(it) ?: 0 else 0 },
+                userProbs = Array(81) { if (read[it] == 0) userProbs?.get(it)?.copyOf() else null },
             )
         }
     }

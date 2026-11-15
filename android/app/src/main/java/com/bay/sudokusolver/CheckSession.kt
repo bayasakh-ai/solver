@@ -16,8 +16,19 @@ enum class CellMark { NONE, UNSURE, CORRECTED, CHANGED, MINE }
 enum class UnsureReason { LOW_CONFIDENCE, INK, HAND }
 
 sealed interface CheckResult {
-    /** [start]: the digits marked as the user's (0 elsewhere); the board starts with them. */
-    class Ready(val puzzle: Puzzle, val start: IntArray = IntArray(81)) : CheckResult
+    /**
+     * [start]: the digits marked as the user's (0 elsewhere); the board starts with them.
+     * [doubtful]: those of them the scan couldn't read for sure and the user left as they
+     * were: Check my progress doesn't judge them. [couldBe]: per cell, a bit mask (bit d
+     * = digit d) of what else the handwriting could be (ProgressChecker.PLAUSIBLE); 0 =
+     * nothing else, e.g. a digit the user picked on Check.
+     */
+    class Ready(
+        val puzzle: Puzzle,
+        val start: IntArray = IntArray(81),
+        val doubtful: Set<Int> = emptySet(),
+        val couldBe: IntArray = IntArray(81),
+    ) : CheckResult
     data object TooFew : CheckResult
     /** A digit repeats in a row, column or box, or no solution exists. */
     data object NoSolution : CheckResult
@@ -167,13 +178,18 @@ class CheckSession(
     fun confirm(): CheckResult {
         val grid = printed.copyOf()
         val start = IntArray(81) { if (it in mine) value(it) else 0 }
+        val doubtful = (0 until 81).filterTo(HashSet()) { mineUnsure(it) }
+        // what else each of the scan's handwritten readings could be; a digit the user set is certain
+        val couldBe = IntArray(81) { i ->
+            if (i in mine && i !in edits && capture.userEntries[i] != 0) ProgressChecker.couldBe(capture.userProbs[i]) else 0
+        }
         val scanAsIs = edits.isEmpty() && mine == CheckSession(capture).mine
-        if (scanAsIs && capture.solution != null) return CheckResult.Ready(Puzzle(grid, capture.solution), start)
+        if (scanAsIs && capture.solution != null) return CheckResult.Ready(Puzzle(grid, capture.solution), start, doubtful, couldBe)
         if (!Solver.isPlausible(grid)) return CheckResult.TooFew
         val sols = Solver.solve(grid)
         return when (sols.size) {
             0 -> CheckResult.NoSolution
-            1 -> CheckResult.Ready(Puzzle(grid, sols[0]), start)
+            1 -> CheckResult.Ready(Puzzle(grid, sols[0]), start, doubtful, couldBe)
             else -> CheckResult.Ambiguous
         }
     }
