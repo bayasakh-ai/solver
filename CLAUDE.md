@@ -270,6 +270,19 @@ architecture and rules.
   - **The camera page promises "no picture is saved, the app has no internet access".**
     True while the manifest asks for CAMERA only and Check's photo stays in memory.
     **Rewrite it before adding INTERNET** (ads, opt-in upload of corrections, v1.2).
+  - **Release paperwork (2026-11-15, `docs/`).** `privacy-policy.md` (to be hosted at a
+    public URL; developer name, contact email and date are still blanks) and
+    `play-data-safety.md` (the Play Console answers with their evidence: "No data
+    collected", checked against the merged manifest). Google wants the policy inside
+    the app too: **Settings -> About -> Privacy policy** (`Route.Policy`, `PolicyScreen`)
+    draws `assets/privacy-policy.md` with a small Markdown reader (`PolicyText.kt`,
+    pure Kotlin), since the app can't open a web page. One text, two copies:
+    `cp docs/privacy-policy.md android/app/src/main/assets/` after every edit;
+    `PolicyTextTest` fails while they differ, and also fails if the manifest ever asks
+    for anything but CAMERA (the policy, the data-safety answers and the welcome
+    promise must be rewritten first). Open: Android backup (settings + saved game can
+    go to the user's Google account; exclude or keep), and the library-added
+    `ACCESS_NETWORK_STATE` on the store listing.
   - **Phone checks:** fresh install (three pages, Allow -> scanner); Not now -> no-camera
     screen -> Allow camera; refuse twice, then Allow camera opens system settings, and
     allowing there shows the scanner on return; dismiss the dialog without choosing
@@ -568,6 +581,7 @@ from print by colour or darkness (see above), so the signal is **shape**.
   export_background_cases.py  grids + per-cell backgrounds/steps for BackgroundParityTest
   inspect_photo.py     stage-by-stage report + side-by-side image for real photos
   photos/              real test photos + truth files (see Commands)
+  docs/                privacy-policy.md (also copied into the app's assets), play-data-safety.md
   model.tflite         current model (also copied into android/app/src/main/assets/)
 android/               Android Studio project (Kotlin, Compose, minSdk 24)
   app/src/main/java/com/bay/sudokusolver/
@@ -593,6 +607,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ProgressChecker.kt Check my progress: the user's digits against the solution, count first,
                        doubtful readings not judged (pure Kotlin)
     Welcome.kt         welcome pages (which exist, what the last button does), CameraAsk (pure Kotlin)
+    PolicyText.kt      the privacy policy's Markdown read into blocks for Settings -> About (pure Kotlin)
     Units.kt           rows / columns / boxes, peers, candidates (pure Kotlin)
     CheckSession.kt    Check: marks, why unsure, dashed suggestion, user edits, confirm (pure Kotlin)
     GameStore.kt       the kept game in SharedPreferences, written after every change (Android side)
@@ -616,6 +631,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
     ui/play/           PlayScreen (board, keypad, hint sheet, Show solution), HintOverlay (hint marks
                        + Show me keyframes)
     ui/settings/       SettingsScreen (answer palette, game board, debug thumbnail, welcome again),
+                       PolicyScreen (the privacy policy),
                        SettingsStore (SharedPreferences; debug off by default, welcomeSeen)
     ui/welcome/        WelcomeScreen (Hello, How it works, Allow the camera), NoCameraScreen
   app/src/main/res/font/  Cormorant Garamond + Lora variable TTFs from google/fonts, unmodified
@@ -625,7 +641,7 @@ android/               Android Studio project (Kotlin, Compose, minSdk 24)
                        OrientationTest, CaptureTest, RouteTest, CheckSessionTest, HintEngineTest,
                        GameStateTest, GeneratorTest, WelcomeTest, GridCheckParityTest, HandParityTest,
                        HintAdvancedTest (resources/hints/real_puzzles.txt: the photos' puzzles), HintKeysTest,
-                       ZoomTest, ProgressCheckerTest
+                       ZoomTest, ProgressCheckerTest, PolicyTextTest
                        (plain JVM, no phone; resources/polarity/, resources/ink/, resources/background/, resources/gridcheck/,
                        resources/hand/ from export_hand_cases.py;
                        from export_polarity_cases.py / export_ink_cases.py / export_background_cases.py /

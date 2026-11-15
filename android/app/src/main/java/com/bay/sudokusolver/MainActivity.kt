@@ -51,6 +51,7 @@ import com.bay.sudokusolver.ui.check.GridPhoto
 import com.bay.sudokusolver.ui.choose.ChooseScreen
 import com.bay.sudokusolver.ui.play.PlayScreen
 import com.bay.sudokusolver.ui.progress.ProgressScreen
+import com.bay.sudokusolver.ui.settings.PolicyScreen
 import com.bay.sudokusolver.ui.settings.SettingsScreen
 import com.bay.sudokusolver.ui.settings.SettingsStore
 import com.bay.sudokusolver.ui.theme.CameraChrome
@@ -80,6 +81,8 @@ class MainActivity : ComponentActivity() {
     private var debug by mutableStateOf(false)
     private var zoomSmall by mutableStateOf(false) // Settings: analyse 1280x960 frames in two views (Zoom.kt)
     private var cameraView: PreviewView? = null    // to start the camera again when that changes
+    /** The privacy policy bundled with the app (the same text as the web page). */
+    private val policyText: String by lazy { assets.open("privacy-policy.md").bufferedReader().use { it.readText() } }
     /** Which screen shows; the camera stays underneath (see Route.kt). */
     private var nav by mutableStateOf(NavStack())
     /** Freeze state before Check opened, restored when the flow returns to the camera. */
@@ -216,8 +219,9 @@ class MainActivity : ComponentActivity() {
                             onBack = ::goBack)
                         Route.Settings -> SettingsScreen(palette, debug, board,
                             onPalette = ::choosePalette, onDebug = ::chooseDebug, zoom = zoomSmall, onZoom = ::chooseZoom,
-                            onBoard = ::chooseBoard,
+                            onBoard = ::chooseBoard, onPolicy = { nav = nav.open(Route.Policy) },
                             onWelcome = ::replayWelcome, onBack = ::goBack)
+                        Route.Policy -> PolicyScreen(policyText, onBack = ::goBack)
                         Route.Welcome -> welcome?.let { w ->
                             WelcomeScreen(w,
                                 onNext = { welcome = w.next() }, onBack = ::goBack, onSkip = { welcome = w.skip() },

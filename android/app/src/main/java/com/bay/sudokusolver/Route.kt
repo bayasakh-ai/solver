@@ -13,6 +13,9 @@ sealed interface Route {
     /** Answer palette and debug thumbnail. */
     data object Settings : Route
 
+    /** The privacy policy, from Settings > About (PolicyText). */
+    data object Policy : Route
+
     /**
      * The welcome pages: over the camera on a first run, over Settings when opened again
      * from there. Which page shows is a [Welcome] kept beside the stack (Welcome.kt).

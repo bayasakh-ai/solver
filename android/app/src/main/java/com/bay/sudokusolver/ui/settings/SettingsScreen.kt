@@ -65,6 +65,7 @@ fun SettingsScreen(
     onDebug: (Boolean) -> Unit,
     zoom: Boolean = false,
     onZoom: (Boolean) -> Unit = {},
+    onPolicy: () -> Unit = {},
     onBoard: (BoardSettings) -> Unit,
     onWelcome: () -> Unit,
     onBack: () -> Unit,
@@ -138,7 +139,9 @@ fun SettingsScreen(
                 Modifier.padding(horizontal = 20.dp))
 
             Text("About", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp))
-            LinkRow("How scanning works", "The welcome pages, once more.", onWelcome,
+            LinkRow("How scanning works", "The welcome pages, once more.", onWelcome, Modifier.padding(horizontal = 20.dp))
+            HorizontalDivider(color = Classical.Ink.copy(alpha = 0.14f), modifier = Modifier.padding(horizontal = 20.dp))
+            LinkRow("Privacy policy", "What the app does with the camera, and what it keeps.", onPolicy,
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp))
         }
     }
